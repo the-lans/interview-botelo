@@ -6,13 +6,14 @@ from tempfile import NamedTemporaryFile
 import subprocess
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from striprtf.striprtf import rtf_to_text
 from docx import Document
 
 from app.api.schemas import (
     InterviewAnswerIn,
+    InterviewAnswerOut,
     InterviewStartOut,
     LoginIn,
     MessageOut,
@@ -82,6 +83,7 @@ async def upload_resume(
         doc = Document(BytesIO(data))
         content = "\n".join(p.text for p in doc.paragraphs)
     elif filename.endswith(".doc"):
+        # Requires system package: antiword
         try:
             with NamedTemporaryFile(suffix=".doc", delete=True) as tmp:
                 tmp.write(data)
@@ -164,7 +166,7 @@ async def get_questions(topic: str | None = None, db: AsyncSession = Depends(get
 async def interview_start(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    res = await db.execute(select(Question).limit(1))
+    res = await db.execute(select(Question).order_by(func.random()).limit(1))
     question = res.scalar_one_or_none()
     if not question:
         raise HTTPException(status_code=400, detail="No questions in database")
@@ -177,7 +179,7 @@ async def interview_start(
     return {"session_id": session.id, "question_id": question.id, "question": question.text}
 
 
-@router.post("/interview/answer", response_model=MessageOut)
+@router.post("/interview/answer", response_model=InterviewAnswerOut)
 async def interview_answer(
     data: InterviewAnswerIn,
     user: User = Depends(get_current_user),
@@ -219,8 +221,19 @@ async def interview_answer(
         score=None,
     )
     db.add(answer)
+
+    next_q_res = await db.execute(
+        select(Question).where(Question.id != question.id).order_by(func.random()).limit(1)
+    )
+    next_q = next_q_res.scalar_one_or_none()
+    session.question_id = next_q.id if next_q else None
     await db.commit()
-    return {"detail": "ok"}
+
+    return {
+        "feedback": feedback,
+        "next_question_id": next_q.id if next_q else None,
+        "next_question": next_q.text if next_q else None,
+    }
 
 
 @router.get("/progress")

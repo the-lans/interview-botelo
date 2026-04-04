@@ -12,6 +12,9 @@ cd backend
 cp ../.env.example .env
 # fill DATABASE_URL, JWT_SECRET, SESSION_SECRET, OPENCLAW_API_TOKEN
 
+# Required for .doc parsing
+sudo apt-get install -y antiword
+
 python -m pip install -e .
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```

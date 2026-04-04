@@ -22,3 +22,14 @@ async def on_startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text("SELECT 1"))
+
+        # Ensure column exists for existing DBs (PostgreSQL)
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE interview_sessions "
+                    "ADD COLUMN IF NOT EXISTS question_id INTEGER"
+                )
+            )
+        except Exception:
+            pass
