@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
+from tempfile import NamedTemporaryFile
+import subprocess
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from striprtf.striprtf import rtf_to_text
 from docx import Document
-import textract
 
 from app.api.schemas import (
     InterviewAnswerIn,
@@ -89,7 +90,17 @@ async def upload_resume(
         content = "\n".join(p.text for p in doc.paragraphs)
     elif filename.endswith(".doc"):
         try:
-            content = textract.process(data, extension="doc").decode("utf-8", errors="replace")
+            with NamedTemporaryFile(suffix=".doc", delete=True) as tmp:
+                tmp.write(data)
+                tmp.flush()
+                res = subprocess.run(
+                    ["antiword", tmp.name], capture_output=True, text=True, check=False
+                )
+            if res.returncode != 0:
+                raise HTTPException(status_code=415, detail="Failed to parse .doc file")
+            content = res.stdout
+        except HTTPException:
+            raise
         except Exception:
             raise HTTPException(status_code=415, detail="Failed to parse .doc file")
     else:
