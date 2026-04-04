@@ -11,5 +11,6 @@ class InterviewSession(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    question_id: Mapped[int | None] = mapped_column(ForeignKey("questions.id"))
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     score: Mapped[float | None] = mapped_column(Numeric(5, 2))

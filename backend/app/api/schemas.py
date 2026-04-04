@@ -21,10 +21,11 @@ class PlanIn(BaseModel):
 
 class InterviewStartOut(BaseModel):
     session_id: int
+    question_id: int
     question: str
 
 
 class InterviewAnswerIn(BaseModel):
     session_id: int
-    question: str
+    question_id: int
     answer: str

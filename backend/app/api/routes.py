@@ -29,13 +29,6 @@ from app.services.security import create_access_token, hash_password, verify_pas
 router = APIRouter()
 
 
-def _get_client_ip(request: Request) -> str:
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
 @router.post("/auth/signup", response_model=MessageOut)
 async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(User).where(User.email == data.email))
@@ -49,7 +42,7 @@ async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
 
 @router.post("/auth/login", response_model=MessageOut)
 async def login(request: Request, response: Response, data: LoginIn, db: AsyncSession = Depends(get_db)):
-    ip = _get_client_ip(request)
+    ip = request.client.host if request.client else "unknown"
     if not check_rate_limit(ip):
         raise HTTPException(status_code=429, detail="Too many attempts")
 
@@ -176,12 +169,12 @@ async def interview_start(
     if not question:
         raise HTTPException(status_code=400, detail="No questions in database")
 
-    session = InterviewSession(user_id=user.id, started_at=datetime.utcnow())
+    session = InterviewSession(user_id=user.id, question_id=question.id, started_at=datetime.utcnow())
     db.add(session)
     await db.commit()
     await db.refresh(session)
 
-    return {"session_id": session.id, "question": question.text}
+    return {"session_id": session.id, "question_id": question.id, "question": question.text}
 
 
 @router.post("/interview/answer", response_model=MessageOut)
@@ -200,9 +193,17 @@ async def interview_answer(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    if not session.question_id or session.question_id != data.question_id:
+        raise HTTPException(status_code=400, detail="Question mismatch")
+
+    q = await db.execute(select(Question).where(Question.id == data.question_id))
+    question = q.scalar_one_or_none()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question not found")
+
     messages = [
         {"role": "system", "content": "You are an interviewer. Provide brief feedback."},
-        {"role": "user", "content": f"Q: {data.question}\nA: {data.answer}"},
+        {"role": "user", "content": f"Q: {question.text}\nA: {data.answer}"},
     ]
     try:
         ai_resp = await chat_completion(messages)
@@ -212,7 +213,7 @@ async def interview_answer(
 
     answer = InterviewAnswer(
         session_id=session.id,
-        question=data.question,
+        question=question.text,
         answer=data.answer,
         feedback=feedback,
         score=None,
