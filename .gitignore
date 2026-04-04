@@ -1,6 +1,32 @@
 .env
 .env.*
 !.env.example
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# Tests & tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# DB/Artifacts
+*.db
+
+# Venv
 .venv/
+
+# Node
+node_modules/
+
+# IDE/OS
+.DS_Store
+.idea/
+.vscode/
