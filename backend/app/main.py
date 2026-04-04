@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from sqlalchemy import text
-from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.api.routes import router
 from app.db.session import Base, engine
