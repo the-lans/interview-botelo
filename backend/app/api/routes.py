@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from striprtf.striprtf import rtf_to_text
 from docx import Document
+import textract
 
 from app.api.schemas import (
     InterviewAnswerIn,
@@ -27,6 +28,13 @@ from app.services.security import create_access_token, hash_password, verify_pas
 router = APIRouter()
 
 
+def _get_client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 @router.post("/auth/signup", response_model=MessageOut)
 async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(User).where(User.email == data.email))
@@ -40,7 +48,7 @@ async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
 
 @router.post("/auth/login", response_model=MessageOut)
 async def login(request: Request, response: Response, data: LoginIn, db: AsyncSession = Depends(get_db)):
-    ip = request.client.host if request.client else "unknown"
+    ip = _get_client_ip(request)
     if not check_rate_limit(ip):
         raise HTTPException(status_code=429, detail="Too many attempts")
 
@@ -79,6 +87,11 @@ async def upload_resume(
     elif filename.endswith(".docx"):
         doc = Document(BytesIO(data))
         content = "\n".join(p.text for p in doc.paragraphs)
+    elif filename.endswith(".doc"):
+        try:
+            content = textract.process(data, extension="doc").decode("utf-8", errors="replace")
+        except Exception:
+            raise HTTPException(status_code=415, detail="Failed to parse .doc file")
     else:
         raise HTTPException(status_code=415, detail="Unsupported file type")
 
@@ -117,7 +130,7 @@ async def generate_plan(
         ai_resp = await chat_completion(messages)
         content = ai_resp["choices"][0]["message"]["content"]
     except Exception:
-        content = "Plan generation failed. Please try again later."
+        raise HTTPException(status_code=502, detail="Plan generation failed")
 
     plan = Plan(user_id=user.id, content=content)
     db.add(plan)
@@ -184,7 +197,7 @@ async def interview_answer(
         ai_resp = await chat_completion(messages)
         feedback = ai_resp["choices"][0]["message"]["content"]
     except Exception:
-        feedback = "Feedback unavailable."
+        raise HTTPException(status_code=502, detail="Feedback unavailable")
 
     answer = InterviewAnswer(
         session_id=session.id,
