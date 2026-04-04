@@ -29,3 +29,9 @@ class InterviewAnswerIn(BaseModel):
     session_id: int
     question_id: int
     answer: str
+
+
+class InterviewAnswerOut(BaseModel):
+    feedback: str
+    next_question_id: int | None = None
+    next_question: str | None = None
