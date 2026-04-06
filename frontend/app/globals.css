@@ -1,0 +1,68 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #f6f7fb;
+  color: #1d1f2a;
+}
+
+main {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 48px 20px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.08);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+input, textarea {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #d6d9e0;
+  font-size: 14px;
+}
+
+button {
+  background: #2d6cdf;
+  color: #fff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: #b5c6ec;
+  cursor: not-allowed;
+}
+
+nav {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+nav a {
+  color: #2d6cdf;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+small {
+  color: #6b7280;
+}
