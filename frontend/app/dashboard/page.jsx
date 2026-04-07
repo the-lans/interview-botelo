@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { fetchProgress, logout } from "../../lib/api";
 
 export default function DashboardPage() {
   const [progress, setProgress] = useState([]);
   const [status, setStatus] = useState("");
+  const [needsLogin, setNeedsLogin] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     let mounted = true;
@@ -17,7 +20,12 @@ export default function DashboardPage() {
       })
       .catch((error) => {
         if (mounted) {
-          setStatus(error.message);
+          if (error.status === 401) {
+            setNeedsLogin(true);
+            setStatus("Нужно войти, чтобы увидеть прогресс.");
+          } else {
+            setStatus(error.message);
+          }
         }
       });
 
@@ -31,6 +39,7 @@ export default function DashboardPage() {
     try {
       await logout();
       setStatus("Вы вышли из системы");
+      router.push("/login");
     } catch (error) {
       setStatus(error.message);
     }
@@ -43,6 +52,11 @@ export default function DashboardPage() {
         Выйти
       </button>
       {status && <p><small>{status}</small></p>}
+      {needsLogin && (
+        <p>
+          <a href="/login">Перейти к входу</a>
+        </p>
+      )}
       <h2>Прогресс</h2>
       {progress.length === 0 && <p><small>Пока нет данных.</small></p>}
       <ul>
