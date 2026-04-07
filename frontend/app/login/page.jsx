@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { login } from "../../lib/api";
 
 export default function LoginPage() {
@@ -8,6 +9,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -16,6 +18,7 @@ export default function LoginPage() {
     try {
       await login({ email, password });
       setStatus("Успешный вход");
+      router.push("/dashboard");
     } catch (error) {
       setStatus(error.message);
     } finally {
