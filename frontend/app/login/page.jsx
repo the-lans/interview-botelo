@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { login } from "../../lib/api";
 
 export default function LoginPage() {
@@ -10,6 +10,9 @@ export default function LoginPage() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const verified = searchParams.get("verified");
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -20,7 +23,11 @@ export default function LoginPage() {
       setStatus("Успешный вход");
       router.push("/dashboard");
     } catch (error) {
-      setStatus(error.message);
+      if (error.status === 403) {
+        setStatus("Подтвердите email, затем войдите.");
+      } else {
+        setStatus(error.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -29,6 +36,7 @@ export default function LoginPage() {
   return (
     <section className="card">
       <h1>Вход</h1>
+      {verified && <p><small>Email подтверждён. Теперь можно войти.</small></p>}
       <form onSubmit={handleSubmit}>
         <label className="field">
           Email

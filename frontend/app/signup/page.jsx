@@ -17,8 +17,7 @@ export default function SignupPage() {
     setLoading(true);
     try {
       await signup({ email, password });
-      setStatus("Регистрация успешна");
-      router.push("/dashboard");
+      setStatus("Проверьте почту и подтвердите email, затем войдите.");
     } catch (error) {
       setStatus(error.message);
     } finally {

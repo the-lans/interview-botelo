@@ -17,6 +17,8 @@ def _set_env():
     os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
     os.environ["JWT_SECRET"] = "test_jwt_secret"
     os.environ["SESSION_SECRET"] = "test_session_secret"
+    os.environ["APP_ENV"] = "test"
+    os.environ["FRONTEND_BASE_URL"] = "http://test"
 
 
 @pytest.fixture
