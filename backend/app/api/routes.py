@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from tempfile import NamedTemporaryFile
+import secrets
 import subprocess
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from striprtf.striprtf import rtf_to_text
@@ -20,11 +22,13 @@ from app.api.schemas import (
     PlanIn,
     SignupIn,
 )
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models import InterviewAnswer, InterviewSession, Plan, Progress, Question, Resume, User
 from app.services.ai_proxy import chat_completion
 from app.services.auth import get_current_user
 from app.services.rate_limit import check_rate_limit
+from app.services.emailer import send_email
 from app.services.security import create_access_token, hash_password, verify_password
 
 router = APIRouter()
@@ -32,13 +36,33 @@ router = APIRouter()
 
 @router.post("/auth/signup", response_model=MessageOut)
 async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
+    settings = get_settings()
     res = await db.execute(select(User).where(User.email == data.email))
     if res.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
-    user = User(email=data.email, password_hash=hash_password(data.password))
+
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(hours=settings.EMAIL_VERIFY_TOKEN_TTL_HOURS)
+
+    user = User(
+        email=data.email,
+        password_hash=hash_password(data.password),
+        email_verified=False,
+        email_verification_token=token,
+        email_verification_expires_at=expires_at,
+    )
     db.add(user)
     await db.commit()
-    return {"detail": "ok"}
+
+    verify_link = f"{settings.FRONTEND_BASE_URL}/auth/verify?token={token}"
+    body = (
+        "Подтверждение регистрации.\n\n"
+        f"Перейдите по ссылке для подтверждения email:\n{verify_link}\n\n"
+        "Если вы не регистрировались, просто игнорируйте это письмо."
+    )
+    send_email(data.email, "Подтверждение регистрации", body)
+
+    return {"detail": "verification_sent"}
 
 
 @router.post("/auth/login", response_model=MessageOut)
@@ -51,6 +75,8 @@ async def login(request: Request, response: Response, data: LoginIn, db: AsyncSe
     user = res.scalar_one_or_none()
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user.email_verified:
+        raise HTTPException(status_code=403, detail="Email not verified")
 
     token = create_access_token(str(user.id))
     response.set_cookie("session", token, httponly=True, samesite="lax")
@@ -63,6 +89,24 @@ async def logout(response: Response):
     response.delete_cookie("session")
     response.delete_cookie("csrf_token")
     return {"detail": "ok"}
+
+
+@router.get("/auth/verify")
+async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
+    settings = get_settings()
+    res = await db.execute(select(User).where(User.email_verification_token == token))
+    user = res.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid token")
+    if user.email_verification_expires_at and user.email_verification_expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Token expired")
+
+    user.email_verified = True
+    user.email_verification_token = None
+    user.email_verification_expires_at = None
+    await db.commit()
+
+    return RedirectResponse(url=f"{settings.FRONTEND_BASE_URL}/login?verified=1")
 
 
 @router.post("/upload/resume", response_model=MessageOut)
