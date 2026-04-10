@@ -20,6 +20,7 @@ from app.api.schemas import (
     LoginIn,
     MessageOut,
     PlanIn,
+    ResendVerificationIn,
     SignupIn,
 )
 from app.core.config import get_settings
@@ -28,8 +29,8 @@ from app.models import InterviewAnswer, InterviewSession, Plan, Progress, Questi
 from app.services.ai_proxy import chat_completion
 from app.services.auth import get_current_user
 from app.services.rate_limit import check_rate_limit
-from app.services.emailer import send_email
-from app.services.security import create_access_token, hash_password, verify_password
+from app.services.emailer import EmailDeliveryError, send_email
+from app.services.security import create_access_token, hash_email_token, hash_password, verify_password
 
 router = APIRouter()
 
@@ -48,19 +49,22 @@ async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
         email=data.email,
         password_hash=hash_password(data.password),
         email_verified=False,
-        email_verification_token=token,
+        email_verification_token=hash_email_token(token),
         email_verification_expires_at=expires_at,
     )
-    db.add(user)
-    await db.commit()
-
     verify_link = f"{settings.FRONTEND_BASE_URL}/auth/verify?token={token}"
     body = (
         "Подтверждение регистрации.\n\n"
         f"Перейдите по ссылке для подтверждения email:\n{verify_link}\n\n"
         "Если вы не регистрировались, просто игнорируйте это письмо."
     )
-    send_email(data.email, "Подтверждение регистрации", body)
+    try:
+        send_email(data.email, "Подтверждение регистрации", body)
+    except EmailDeliveryError as error:
+        raise HTTPException(status_code=503, detail="Verification email is unavailable") from error
+
+    db.add(user)
+    await db.commit()
 
     return {"detail": "verification_sent"}
 
@@ -94,7 +98,8 @@ async def logout(response: Response):
 @router.get("/auth/verify")
 async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
     settings = get_settings()
-    res = await db.execute(select(User).where(User.email_verification_token == token))
+    token_hash = hash_email_token(token)
+    res = await db.execute(select(User).where(User.email_verification_token == token_hash))
     user = res.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=400, detail="Invalid token")
@@ -107,6 +112,43 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     return RedirectResponse(url=f"{settings.FRONTEND_BASE_URL}/login?verified=1")
+
+
+@router.post("/auth/resend-verification", response_model=MessageOut)
+async def resend_verification(
+    request: Request,
+    data: ResendVerificationIn,
+    db: AsyncSession = Depends(get_db),
+):
+    ip = request.client.host if request.client else "unknown"
+    if not check_rate_limit(f"resend:{ip}:{data.email.lower()}"):
+        raise HTTPException(status_code=429, detail="Too many attempts")
+
+    res = await db.execute(select(User).where(User.email == data.email))
+    user = res.scalar_one_or_none()
+    if not user or user.email_verified:
+        return {"detail": "verification_sent"}
+
+    settings = get_settings()
+    token = secrets.token_urlsafe(32)
+    token_hash = hash_email_token(token)
+    expires_at = datetime.utcnow() + timedelta(hours=settings.EMAIL_VERIFY_TOKEN_TTL_HOURS)
+
+    verify_link = f"{settings.FRONTEND_BASE_URL}/auth/verify?token={token}"
+    body = (
+        "Повторная отправка подтверждения регистрации.\n\n"
+        f"Перейдите по ссылке для подтверждения email:\n{verify_link}\n\n"
+        "Если вы не регистрировались, просто игнорируйте это письмо."
+    )
+    try:
+        send_email(data.email, "Подтверждение регистрации", body)
+    except EmailDeliveryError as error:
+        raise HTTPException(status_code=503, detail="Verification email is unavailable") from error
+
+    user.email_verification_token = token_hash
+    user.email_verification_expires_at = expires_at
+    await db.commit()
+    return {"detail": "verification_sent"}
 
 
 @router.post("/upload/resume", response_model=MessageOut)

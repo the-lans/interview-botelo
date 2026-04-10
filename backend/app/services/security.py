@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import hashlib
 from typing import Any
 
 from jose import jwt
@@ -27,6 +28,10 @@ def create_access_token(subject: str, expires_minutes: int = 60 * 24 * 7) -> str
         "exp": int((now + timedelta(minutes=expires_minutes)).timestamp()),
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
+
+
+def hash_email_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
