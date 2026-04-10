@@ -11,6 +11,10 @@ class LoginIn(BaseModel):
     password: str
 
 
+class ResendVerificationIn(BaseModel):
+    email: EmailStr
+
+
 class MessageOut(BaseModel):
     detail: str
 
