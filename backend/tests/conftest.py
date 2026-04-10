@@ -6,19 +6,13 @@ import pytest
 import httpx
 
 
-@pytest.fixture(scope="session")
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _set_env():
-    sys.path.append(str(Path(__file__).resolve().parents[1]))
-    os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
-    os.environ["JWT_SECRET"] = "test_jwt_secret"
-    os.environ["SESSION_SECRET"] = "test_session_secret"
-    os.environ["APP_ENV"] = "test"
-    os.environ["FRONTEND_BASE_URL"] = "http://test"
+def pytest_configure(config):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
+    os.environ.setdefault("JWT_SECRET", "test_jwt_secret")
+    os.environ.setdefault("SESSION_SECRET", "test_session_secret")
+    os.environ.setdefault("APP_ENV", "test")
+    os.environ.setdefault("FRONTEND_BASE_URL", "http://test")
 
 
 @pytest.fixture
