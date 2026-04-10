@@ -9,6 +9,10 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: sqlite+aiosqlite:///./test.db
+      JWT_SECRET: test_jwt_secret_ci
+      SESSION_SECRET: test_session_secret_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -16,7 +20,7 @@ jobs:
           python-version: "3.12"
       - name: Install system deps
         run: |
-          sudo apt-get update
+          sudo apt-get update -q
           sudo apt-get install -y antiword
       - name: Install backend deps
         run: |
@@ -26,3 +30,16 @@ jobs:
         run: |
           cd backend
           pytest -q
+
+  deploy:
+    needs: tests
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: bash /projects/interview-botelo/deploy/deploy.sh
