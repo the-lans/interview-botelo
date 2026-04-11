@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { login } from "../../lib/api";
 
 export default function LoginPage() {
@@ -10,9 +10,12 @@ export default function LoginPage() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const [verified, setVerified] = useState(false);
 
-  const verified = searchParams.get("verified");
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setVerified(params.get("verified") === "1");
+  }, []);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
