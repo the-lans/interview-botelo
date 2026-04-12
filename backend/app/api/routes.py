@@ -83,7 +83,8 @@ async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
 @router.post("/auth/login", response_model=MessageOut)
 async def login(request: Request, response: Response, data: LoginIn, db: AsyncSession = Depends(get_db)):
     ip = request.client.host if request.client else "unknown"
-    if not check_rate_limit(ip):
+    rate_limit_key = f"login:{ip}:{data.email.lower()}"
+    if not check_rate_limit(rate_limit_key):
         raise HTTPException(status_code=429, detail="Too many attempts")
 
     res = await db.execute(select(User).where(User.email == data.email))

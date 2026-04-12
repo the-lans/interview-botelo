@@ -25,6 +25,10 @@ async def _signup_verify_login(client, email: str = "resume@test.com", password:
     resp = await client.post("/auth/login", json={"email": email, "password": password})
     assert resp.status_code == 200
 
+    csrf_token = resp.cookies.get("csrf_token")
+    assert csrf_token
+    client.headers["x-csrf-token"] = csrf_token
+
 
 @pytest.mark.asyncio
 async def test_upload_resume_markdown_happy_path(client):
