@@ -12,6 +12,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from striprtf.striprtf import rtf_to_text
 from docx import Document
+from docx.opc.exceptions import PackageNotFoundError
 
 from app.api.schemas import (
     InterviewAnswerIn,
@@ -33,6 +34,16 @@ from app.services.emailer import EmailDeliveryError, send_email
 from app.services.security import create_access_token, hash_email_token, hash_password, verify_password
 
 router = APIRouter()
+
+MAX_RESUME_FILE_SIZE_BYTES = 5 * 1024 * 1024
+RESUME_ALLOWED_TYPES = {
+    ".md": {"text/markdown", "text/plain"},
+    ".rtf": {"application/rtf", "text/rtf"},
+    ".doc": {"application/msword"},
+    ".docx": {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    },
+}
 
 
 @router.post("/auth/signup", response_model=MessageOut)
@@ -158,17 +169,42 @@ async def upload_resume(
     db: AsyncSession = Depends(get_db),
 ):
     content = ""
-    filename = (file.filename or "").lower()
+    original_filename = file.filename or ""
+    filename = original_filename.lower()
+    content_type = (file.content_type or "").lower()
     data = await file.read()
+    file_size_bytes = len(data)
 
-    if filename.endswith(".md") or filename.endswith(".txt"):
+    extension = ""
+    if "." in filename:
+        extension = f".{filename.rsplit('.', 1)[-1]}"
+
+    if not extension or extension not in RESUME_ALLOWED_TYPES:
+        raise HTTPException(status_code=415, detail="Unsupported file extension")
+
+    allowed_mime_types = RESUME_ALLOWED_TYPES[extension]
+    if content_type not in allowed_mime_types:
+        raise HTTPException(status_code=415, detail="Unsupported MIME type")
+
+    if file_size_bytes == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    if file_size_bytes > MAX_RESUME_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail="File too large")
+
+    if extension == ".md":
         content = data.decode("utf-8", errors="replace")
-    elif filename.endswith(".rtf"):
+    elif extension == ".rtf":
         content = rtf_to_text(data.decode("utf-8", errors="replace"))
-    elif filename.endswith(".docx"):
-        doc = Document(BytesIO(data))
-        content = "\n".join(p.text for p in doc.paragraphs)
-    elif filename.endswith(".doc"):
+    elif extension == ".docx":
+        try:
+            doc = Document(BytesIO(data))
+            content = "\n".join(p.text for p in doc.paragraphs)
+        except PackageNotFoundError:
+            raise HTTPException(status_code=415, detail="Failed to parse .docx file")
+        except Exception:
+            raise HTTPException(status_code=415, detail="Failed to parse .docx file")
+    elif extension == ".doc":
         # Requires system package: antiword
         try:
             with NamedTemporaryFile(suffix=".doc", delete=True) as tmp:
@@ -184,13 +220,17 @@ async def upload_resume(
             raise
         except Exception:
             raise HTTPException(status_code=415, detail="Failed to parse .doc file")
-    else:
-        raise HTTPException(status_code=415, detail="Unsupported file type")
 
     if not content.strip():
         raise HTTPException(status_code=400, detail="Empty resume")
 
-    resume = Resume(user_id=user.id, content=content)
+    resume = Resume(
+        user_id=user.id,
+        filename=original_filename,
+        mime_type=content_type,
+        file_size_bytes=file_size_bytes,
+        content=content,
+    )
     db.add(resume)
     await db.commit()
     return {"detail": "ok"}
