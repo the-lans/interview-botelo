@@ -77,12 +77,34 @@ async def test_upload_resume_docx_happy_path(client):
 
 
 @pytest.mark.asyncio
+async def test_upload_resume_text_happy_path(client):
+    from app.db.session import SessionLocal
+
+    await _signup_verify_login(client, email="resume_txt@test.com")
+
+    payload = b"Python backend developer"
+    resp = await client.post(
+        "/upload/resume",
+        files={"file": ("resume.txt", payload, "text/plain")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["detail"] == "ok"
+
+    async with SessionLocal() as session:
+        res = await session.execute(select(Resume).where(Resume.filename == "resume.txt"))
+        saved = res.scalar_one()
+        assert saved.mime_type == "text/plain"
+        assert saved.file_size_bytes == len(payload)
+        assert "Python backend developer" in saved.content
+
+
+@pytest.mark.asyncio
 async def test_upload_resume_unsupported_extension(client):
     await _signup_verify_login(client, email="resume_ext@test.com")
 
     resp = await client.post(
         "/upload/resume",
-        files={"file": ("resume.txt", b"hello", "text/plain")},
+        files={"file": ("resume.pdf", b"hello", "application/pdf")},
     )
     assert resp.status_code == 415
     assert resp.json()["detail"] == "Unsupported file extension"
