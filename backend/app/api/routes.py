@@ -38,6 +38,7 @@ router = APIRouter()
 MAX_RESUME_FILE_SIZE_BYTES = 5 * 1024 * 1024
 RESUME_ALLOWED_TYPES = {
     ".md": {"text/markdown", "text/plain"},
+    ".txt": {"text/plain"},
     ".rtf": {"application/rtf", "text/rtf"},
     ".doc": {"application/msword"},
     ".docx": {
@@ -193,7 +194,7 @@ async def upload_resume(
     if file_size_bytes > MAX_RESUME_FILE_SIZE_BYTES:
         raise HTTPException(status_code=413, detail="File too large")
 
-    if extension == ".md":
+    if extension in {".md", ".txt"}:
         content = data.decode("utf-8", errors="replace")
     elif extension == ".rtf":
         content = rtf_to_text(data.decode("utf-8", errors="replace"))
