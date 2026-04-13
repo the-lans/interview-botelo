@@ -1,21 +1,18 @@
 from __future__ import annotations
 
-import json
-import logging
-import secrets
-import subprocess
 from datetime import datetime, timedelta
 from io import BytesIO
 from tempfile import NamedTemporaryFile
-from uuid import uuid4
+import secrets
+import subprocess
 
-from docx import Document
-from docx.opc.exceptions import PackageNotFoundError
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from striprtf.striprtf import rtf_to_text
+from docx import Document
+from docx.opc.exceptions import PackageNotFoundError
 
 from app.api.schemas import (
     InterviewAnswerIn,
@@ -23,30 +20,20 @@ from app.api.schemas import (
     InterviewStartOut,
     LoginIn,
     MessageOut,
-    PlanGenerateOut,
     PlanIn,
     ResendVerificationIn,
     SignupIn,
-    VacancyIngestIn,
-    VacancyIngestOut,
 )
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models import InterviewAnswer, InterviewSession, Plan, Progress, Question, Resume, User
 from app.services.ai_proxy import chat_completion
 from app.services.auth import get_current_user
-from app.services.emailer import EmailDeliveryError, send_email
 from app.services.rate_limit import check_rate_limit
-from app.services.security import (
-    create_access_token,
-    hash_email_token,
-    hash_password,
-    verify_password,
-)
-from app.services.vacancy_ingest import ingest_vacancy, normalize_text
+from app.services.emailer import EmailDeliveryError, send_email
+from app.services.security import create_access_token, hash_email_token, hash_password, verify_password
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
 
 MAX_RESUME_FILE_SIZE_BYTES = 5 * 1024 * 1024
 RESUME_ALLOWED_TYPES = {
@@ -95,9 +82,7 @@ async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/auth/login", response_model=MessageOut)
-async def login(
-    request: Request, response: Response, data: LoginIn, db: AsyncSession = Depends(get_db)
-):
+async def login(request: Request, response: Response, data: LoginIn, db: AsyncSession = Depends(get_db)):
     ip = request.client.host if request.client else "unknown"
     rate_limit_key = f"login:{ip}:{data.email.lower()}"
     if not check_rate_limit(rate_limit_key):
@@ -131,10 +116,7 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
     user = res.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=400, detail="Invalid token")
-    if (
-        user.email_verification_expires_at
-        and user.email_verification_expires_at < datetime.utcnow()
-    ):
+    if user.email_verification_expires_at and user.email_verification_expires_at < datetime.utcnow():
         raise HTTPException(status_code=400, detail="Token expired")
 
     user.email_verified = True
@@ -256,101 +238,38 @@ async def upload_resume(
     return {"detail": "ok"}
 
 
-@router.post("/vacancy/ingest", response_model=VacancyIngestOut)
-async def vacancy_ingest(
-    data: VacancyIngestIn,
-    user: User = Depends(get_current_user),
-):
-    del user
-    vacancy_text = await ingest_vacancy(data.url, data.raw_text)
-    return {"vacancy_text": vacancy_text}
-
-
-@router.post("/plan/generate", response_model=PlanGenerateOut)
+@router.post("/plan/generate", response_model=MessageOut)
 async def generate_plan(
     data: PlanIn,
-    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    correlation_id = request.headers.get("x-correlation-id") or str(uuid4())
-
     res = await db.execute(
         select(Resume).where(Resume.user_id == user.id).order_by(Resume.created_at.desc())
     )
     resume = res.scalars().first()
-    resume_text = data.resume_text or (resume.content if resume else "")
-    if not resume_text.strip():
+    if not resume:
         raise HTTPException(status_code=400, detail="Resume not uploaded")
-    resume_text = normalize_text(resume_text)
-    vacancy_text = normalize_text(data.vacancy_text)
 
-    brief = data.brief.model_dump()
-
-    system_prompt = (
-        "You are a senior interview preparation coach. "
-        "Return only valid JSON. "
-        "Build a complete and realistic plan based on gap analysis: vacancy requirements vs candidate profile."
+    prompt = (
+        "Generate a 2-6 week interview prep plan for a Python developer. "
+        "Topics: Python core, algorithms, system design, DB, async, devops, tests."
     )
-    user_prompt = {
-        "task": "Generate interview preparation plan",
-        "requirements": {
-            "output_format": {
-                "summary": "string",
-                "gap_analysis": [
-                    {
-                        "skill": "string",
-                        "vacancy_requirement": "string",
-                        "candidate_state": "string",
-                        "gap_level": "low|medium|high",
-                    }
-                ],
-                "weeks": [
-                    {
-                        "week": "number",
-                        "themes": ["string"],
-                        "practice": ["string"],
-                        "mock_interview": ["string"],
-                        "expected_outcome": "string",
-                        "time_budget_hours": "number",
-                    }
-                ],
-                "final_readiness_check": ["string"],
-            },
-            "respect_brief": True,
-            "language": brief["language"],
-        },
-        "brief": brief,
-        "resume_text": resume_text,
-        "vacancy_text": vacancy_text,
-    }
-
     messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": json.dumps(user_prompt, ensure_ascii=False)},
+        {"role": "system", "content": "You are an interview coach."},
+        {"role": "user", "content": f"Resume:\n{resume.content}\n\nJob:\n{data.job_text}"},
+        {"role": "user", "content": prompt},
     ]
     try:
         ai_resp = await chat_completion(messages)
         content = ai_resp["choices"][0]["message"]["content"]
-        plan_json = json.loads(content)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=502, detail="AI returned invalid plan JSON")
     except Exception:
-        logger.exception("plan_generation_failed", extra={"correlation_id": correlation_id})
         raise HTTPException(status_code=502, detail="Plan generation failed")
 
-    plan = Plan(
-        user_id=user.id,
-        content=content,
-        resume_text=resume_text,
-        vacancy_text=vacancy_text,
-        brief_json=json.dumps(brief, ensure_ascii=False),
-        plan_json=json.dumps(plan_json, ensure_ascii=False),
-    )
+    plan = Plan(user_id=user.id, content=content)
     db.add(plan)
     await db.commit()
-    await db.refresh(plan)
-    return {"detail": "ok", "plan_id": plan.id, "plan": plan_json}
+    return {"detail": "ok"}
 
 
 @router.get("/questions")
@@ -380,9 +299,7 @@ async def interview_start(
     if not question:
         raise HTTPException(status_code=400, detail="No questions in database")
 
-    session = InterviewSession(
-        user_id=user.id, question_id=question.id, started_at=datetime.utcnow()
-    )
+    session = InterviewSession(user_id=user.id, question_id=question.id, started_at=datetime.utcnow())
     db.add(session)
     await db.commit()
     await db.refresh(session)
