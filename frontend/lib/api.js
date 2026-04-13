@@ -63,3 +63,17 @@ export function logout() {
 export function fetchProgress() {
   return request("/progress", { method: "GET" });
 }
+
+export function ingestVacancy(payload) {
+  return request("/vacancy/ingest", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function generatePlan(payload) {
+  return request("/plan/generate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}

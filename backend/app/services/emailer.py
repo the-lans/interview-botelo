@@ -6,7 +6,6 @@ from email.mime.text import MIMEText
 
 from app.core.config import get_settings
 
-
 logger = logging.getLogger(__name__)
 
 

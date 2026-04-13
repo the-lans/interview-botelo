@@ -3,7 +3,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-EXEMPT_PATHS = {"/auth/login", "/auth/signup", "/auth/logout", "/auth/resend-verification", "/auth/verify"}
+EXEMPT_PATHS = {
+    "/auth/login",
+    "/auth/signup",
+    "/auth/logout",
+    "/auth/resend-verification",
+    "/auth/verify",
+}
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):

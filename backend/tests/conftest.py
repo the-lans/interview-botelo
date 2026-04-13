@@ -2,8 +2,8 @@ import os
 import sys
 from pathlib import Path
 
-import pytest
 import httpx
+import pytest
 
 
 def pytest_configure(config):
@@ -17,8 +17,8 @@ def pytest_configure(config):
 
 @pytest.fixture
 async def client():
-    from app.main import app
     from app.db.session import Base, engine
+    from app.main import app
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
