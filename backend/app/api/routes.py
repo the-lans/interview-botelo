@@ -20,9 +20,12 @@ from app.api.schemas import (
     InterviewStartOut,
     LoginIn,
     MessageOut,
+    PlanGenerateOut,
     PlanIn,
     ResendVerificationIn,
     SignupIn,
+    VacancyIngestIn,
+    VacancyIngestOut,
 )
 from app.core.config import get_settings
 from app.db.session import get_db
@@ -32,6 +35,7 @@ from app.services.auth import get_current_user
 from app.services.rate_limit import check_rate_limit
 from app.services.emailer import EmailDeliveryError, send_email
 from app.services.security import create_access_token, hash_email_token, hash_password, verify_password
+from app.services.vacancy_ingest import ingest_vacancy, normalize_text, MAX_VACANCY_TEXT_LENGTH
 
 router = APIRouter()
 
@@ -238,26 +242,50 @@ async def upload_resume(
     return {"detail": "ok"}
 
 
-@router.post("/plan/generate", response_model=MessageOut)
+@router.post("/vacancy/ingest", response_model=VacancyIngestOut)
+async def vacancy_ingest(
+    data: VacancyIngestIn,
+    _user: User = Depends(get_current_user),
+):
+    vacancy_text = await ingest_vacancy(data.url, data.raw_text)
+    return {"vacancy_text": vacancy_text}
+
+
+@router.post("/plan/generate", response_model=PlanGenerateOut)
 async def generate_plan(
     data: PlanIn,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    res = await db.execute(
-        select(Resume).where(Resume.user_id == user.id).order_by(Resume.created_at.desc())
-    )
-    resume = res.scalars().first()
-    if not resume:
-        raise HTTPException(status_code=400, detail="Resume not uploaded")
+    if data.resume_text and data.resume_text.strip():
+        resume_text = data.resume_text.strip()
+    else:
+        res = await db.execute(
+            select(Resume).where(Resume.user_id == user.id).order_by(Resume.created_at.desc())
+        )
+        resume = res.scalars().first()
+        if not resume:
+            raise HTTPException(status_code=400, detail="Resume not uploaded")
+        resume_text = resume.content
+
+    vacancy_text = normalize_text(data.vacancy_text)
+    if len(vacancy_text) > MAX_VACANCY_TEXT_LENGTH:
+        raise HTTPException(status_code=413, detail="Vacancy text is too long")
 
     prompt = (
-        "Generate a 2-6 week interview prep plan for a Python developer. "
-        "Topics: Python core, algorithms, system design, DB, async, devops, tests."
+        "Generate strict JSON only with keys: summary, gap_analysis, weeks, final_readiness_check. "
+        "weeks is an array where each item has week, themes, practice, mock_interview, expected_outcome, time_budget_hours."
     )
     messages = [
         {"role": "system", "content": "You are an interview coach."},
-        {"role": "user", "content": f"Resume:\n{resume.content}\n\nJob:\n{data.job_text}"},
+        {
+            "role": "user",
+            "content": (
+                f"Resume:\n{resume_text}\n\n"
+                f"Vacancy:\n{vacancy_text}\n\n"
+                f"Brief:\n{data.brief.model_dump_json(indent=2)}"
+            ),
+        },
         {"role": "user", "content": prompt},
     ]
     try:
@@ -266,10 +294,25 @@ async def generate_plan(
     except Exception:
         raise HTTPException(status_code=502, detail="Plan generation failed")
 
-    plan = Plan(user_id=user.id, content=content)
+    import json
+
+    try:
+        plan_json = json.loads(content)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Plan generation failed")
+
+    plan = Plan(
+        user_id=user.id,
+        resume_text=resume_text,
+        vacancy_text=vacancy_text,
+        brief_json=data.brief.model_dump_json(),
+        plan_json=json.dumps(plan_json, ensure_ascii=False),
+        content=content,
+    )
     db.add(plan)
     await db.commit()
-    return {"detail": "ok"}
+    await db.refresh(plan)
+    return {"detail": "ok", "plan_id": plan.id, "plan": plan_json}
 
 
 @router.get("/questions")
