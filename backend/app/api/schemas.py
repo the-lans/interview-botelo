@@ -59,10 +59,26 @@ class PlanBriefIn(BaseModel):
     language: Literal["RU", "EN"]
 
 
+class GeneratedPlanWeekOut(BaseModel):
+    week: int = Field(ge=1)
+    themes: list[str]
+    practice: list[str]
+    mock_interview: list[str]
+    expected_outcome: str
+    time_budget_hours: int = Field(ge=0, le=168)
+
+
+class GeneratedPlanOut(BaseModel):
+    summary: str
+    gap_analysis: list[str]
+    weeks: list[GeneratedPlanWeekOut] = Field(min_length=1)
+    final_readiness_check: list[str]
+
+
 class PlanGenerateOut(BaseModel):
     detail: str
     plan_id: int
-    plan: dict
+    plan: GeneratedPlanOut
 
 
 class InterviewStartOut(BaseModel):

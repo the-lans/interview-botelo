@@ -15,6 +15,7 @@ from docx import Document
 from docx.opc.exceptions import PackageNotFoundError
 
 from app.api.schemas import (
+    GeneratedPlanOut,
     InterviewAnswerIn,
     InterviewAnswerOut,
     InterviewStartOut,
@@ -301,18 +302,23 @@ async def generate_plan(
     except Exception:
         raise HTTPException(status_code=502, detail="Plan generation failed")
 
+    try:
+        validated_plan = GeneratedPlanOut.model_validate(plan_json)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Plan generation failed")
+
     plan = Plan(
         user_id=user.id,
         resume_text=resume_text,
         vacancy_text=vacancy_text,
         brief_json=data.brief.model_dump_json(),
-        plan_json=json.dumps(plan_json, ensure_ascii=False),
+        plan_json=json.dumps(validated_plan.model_dump(), ensure_ascii=False),
         content=content,
     )
     db.add(plan)
     await db.commit()
     await db.refresh(plan)
-    return {"detail": "ok", "plan_id": plan.id, "plan": plan_json}
+    return {"detail": "ok", "plan_id": plan.id, "plan": validated_plan.model_dump()}
 
 
 @router.get("/questions")

@@ -101,6 +101,29 @@ async def test_vacancy_ingest_url_non_html(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_vacancy_ingest_blocks_localhost_url(client):
+    await _signup_verify_login(client, email="vacancy_ssrf_localhost@test.com")
+
+    resp = await client.post("/vacancy/ingest", json={"url": "http://localhost/job"})
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_vacancy_ingest_blocks_private_resolved_ip(client, monkeypatch):
+    import app.services.vacancy_ingest as vacancy_ingest
+
+    await _signup_verify_login(client, email="vacancy_ssrf_private@test.com")
+
+    def fake_getaddrinfo(*args, **kwargs):
+        return [(None, None, None, None, ("10.0.0.5", 0))]
+
+    monkeypatch.setattr(vacancy_ingest.socket, "getaddrinfo", fake_getaddrinfo)
+
+    resp = await client.post("/vacancy/ingest", json={"url": "https://example.com/job"})
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_plan_generate_happy_path(client, monkeypatch):
     from app.db.session import SessionLocal
     from app.models.resume import Resume
@@ -210,3 +233,38 @@ async def test_plan_generate_long_vacancy_text(client):
 
     resp = await client.post("/plan/generate", json=payload)
     assert resp.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_plan_generate_rejects_invalid_plan_shape(client, monkeypatch):
+    await _signup_verify_login(client, email="plan_invalid_shape@test.com")
+
+    async def fake_chat_completion(messages, model="openclaw/devius"):
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"summary":"ok","gap_analysis":[],"weeks":[{"week":1}],"final_readiness_check":[]}'
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr("app.api.routes.chat_completion", fake_chat_completion)
+
+    payload = {
+        "resume_text": "Python dev",
+        "vacancy_text": "Need Python",
+        "brief": {
+            "target_role": "Backend Engineer",
+            "level": "Middle",
+            "horizon_weeks": 4,
+            "time_availability": {"weekday_hours": 2, "weekend_hours": 4},
+            "plan_format": "themes",
+            "priorities": ["SQL"],
+            "language": "RU",
+        },
+    }
+
+    resp = await client.post("/plan/generate", json=payload)
+    assert resp.status_code == 502
