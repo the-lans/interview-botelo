@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 process.env.NEXT_PUBLIC_API_BASE = "http://test";
 
-import { fetchProgress, login, logout } from "../lib/api";
+import { fetchProgress, generatePlan, ingestVacancy, login, logout } from "../lib/api";
 
 const mockFetch = (payload, ok = true) =>
   vi.fn().mockResolvedValue({
@@ -75,5 +75,35 @@ describe("api client", () => {
 
     expect(data).toHaveLength(1);
     expect(data[0].topic).toBe("Python");
+  });
+
+  it("ingestVacancy posts payload", async () => {
+    const fetchSpy = mockFetch({ vacancy_text: "python" });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const data = await ingestVacancy({ raw_text: "python" });
+
+    expect(data.vacancy_text).toBe("python");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://test/vacancy/ingest",
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  it("generatePlan posts payload", async () => {
+    const fetchSpy = mockFetch({ detail: "ok", plan_id: 1, plan: { summary: "ok" } });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const data = await generatePlan({
+      resume_text: "python",
+      vacancy_text: "sql",
+      brief: { target_role: "Backend", priorities: ["SQL"] },
+    });
+
+    expect(data.plan_id).toBe(1);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://test/plan/generate",
+      expect.objectContaining({ method: "POST" })
+    );
   });
 });

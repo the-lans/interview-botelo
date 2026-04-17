@@ -26,10 +26,7 @@ async def on_startup():
         # Ensure columns exist for existing DBs (PostgreSQL)
         try:
             await conn.execute(
-                text(
-                    "ALTER TABLE interview_sessions "
-                    "ADD COLUMN IF NOT EXISTS question_id INTEGER"
-                )
+                text("ALTER TABLE interview_sessions ADD COLUMN IF NOT EXISTS question_id INTEGER")
             )
         except Exception:
             pass
@@ -57,6 +54,30 @@ async def on_startup():
                     "ALTER TABLE users "
                     "ADD COLUMN IF NOT EXISTS email_verification_expires_at TIMESTAMP"
                 )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS resume_text TEXT DEFAULT ''")
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS vacancy_text TEXT DEFAULT ''")
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS brief_json TEXT DEFAULT '{}' ")
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS plan_json TEXT DEFAULT '{}' ")
             )
         except Exception:
             pass

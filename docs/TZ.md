@@ -69,11 +69,59 @@
 ## 8. API (ключевые эндпоинты)
 - `POST /auth/signup`, `POST /auth/login`, `POST /auth/logout`
 - `POST /upload/resume`
+- `POST /vacancy/ingest` (`url` XOR `raw_text`) для извлечения/нормализации текста вакансии
 - `POST /plan/generate`
 - `GET /questions`, `GET /questions?tags=...`
 - `POST /interview/start`
 - `POST /interview/answer`
 - `GET /progress`
+
+### 8.1 `POST /vacancy/ingest`
+Вход:
+```json
+{ "url": "https://example.com/job/123" }
+```
+или
+```json
+{ "raw_text": "...полный текст вакансии..." }
+```
+Выход:
+```json
+{ "vacancy_text": "...нормализованный текст..." }
+```
+
+### 8.2 `POST /plan/generate`
+Вход:
+```json
+{
+  "resume_text": "...опционально...",
+  "vacancy_text": "...нормализованный текст вакансии...",
+  "brief": {
+    "target_role": "Backend Engineer",
+    "level": "Middle",
+    "horizon_weeks": 4,
+    "time_availability": { "weekday_hours": 2, "weekend_hours": 4 },
+    "plan_format": "themes+practice",
+    "priorities": ["SQL", "System Design"],
+    "other_priority": "...",
+    "constraints": "...",
+    "language": "RU"
+  }
+}
+```
+Выход:
+```json
+{
+  "detail": "ok",
+  "plan_id": 123,
+  "plan": {
+    "summary": "...",
+    "gap_analysis": [],
+    "weeks": [],
+    "final_readiness_check": []
+  }
+}
+```
 
 ## 9. Модель данных (черновик)
 - `users(id, email, hash, created_at)`

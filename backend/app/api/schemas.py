@@ -1,4 +1,6 @@
-from pydantic import BaseModel, EmailStr
+from typing import Literal
+
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class SignupIn(BaseModel):
@@ -20,7 +22,63 @@ class MessageOut(BaseModel):
 
 
 class PlanIn(BaseModel):
-    job_text: str
+    resume_text: str | None = None
+    vacancy_text: str
+    brief: "PlanBriefIn"
+
+
+class VacancyIngestIn(BaseModel):
+    url: str | None = None
+    raw_text: str | None = None
+
+    @model_validator(mode="after")
+    def validate_source(self):
+        if bool(self.url) == bool(self.raw_text):
+            raise ValueError("Provide exactly one of url or raw_text")
+        return self
+
+
+class VacancyIngestOut(BaseModel):
+    vacancy_text: str
+
+
+class TimeAvailabilityIn(BaseModel):
+    weekday_hours: int = Field(ge=0, le=24)
+    weekend_hours: int = Field(ge=0, le=24)
+
+
+class PlanBriefIn(BaseModel):
+    target_role: str = Field(min_length=2, max_length=255)
+    level: Literal["Junior", "Junior+", "Middle", "Middle+", "Senior"]
+    horizon_weeks: Literal[2, 4, 6]
+    time_availability: TimeAvailabilityIn
+    plan_format: Literal["themes", "themes+practice", "themes+practice+mock_interview"]
+    priorities: list[str] = Field(min_length=1)
+    other_priority: str | None = None
+    constraints: str | None = None
+    language: Literal["RU", "EN"]
+
+
+class GeneratedPlanWeekOut(BaseModel):
+    week: int = Field(ge=1)
+    themes: list[str]
+    practice: list[str]
+    mock_interview: list[str]
+    expected_outcome: str
+    time_budget_hours: int = Field(ge=0, le=168)
+
+
+class GeneratedPlanOut(BaseModel):
+    summary: str
+    gap_analysis: list[str]
+    weeks: list[GeneratedPlanWeekOut] = Field(min_length=1)
+    final_readiness_check: list[str]
+
+
+class PlanGenerateOut(BaseModel):
+    detail: str
+    plan_id: int
+    plan: GeneratedPlanOut
 
 
 class InterviewStartOut(BaseModel):
