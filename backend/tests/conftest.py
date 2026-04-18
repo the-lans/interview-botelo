@@ -3,8 +3,7 @@ import sys
 from pathlib import Path
 
 import httpx
-import pytest_asyncio
-from asgi_lifespan import LifespanManager
+import pytest
 
 
 def pytest_configure(config):
@@ -16,7 +15,7 @@ def pytest_configure(config):
     os.environ.setdefault("FRONTEND_BASE_URL", "http://test")
 
 
-@pytest_asyncio.fixture
+@pytest.fixture
 async def client():
     from app.db.session import Base, engine
     from app.main import app
@@ -25,7 +24,6 @@ async def client():
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
-    async with LifespanManager(app):
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-            yield ac
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
