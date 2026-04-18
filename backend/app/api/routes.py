@@ -6,7 +6,7 @@ from tempfile import NamedTemporaryFile
 import secrets
 import subprocess
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -322,17 +322,36 @@ async def generate_plan(
 
 
 @router.get("/questions")
-async def get_questions(topic: str | None = None, db: AsyncSession = Depends(get_db)):
+async def get_questions(
+    topic: str | None = Query(default=None, min_length=1, max_length=120),
+    difficulty: str | None = Query(default=None, pattern="^(junior|middle|senior)$"),
+    tags: list[str] | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
     stmt = select(Question)
-    if topic:
+
+    if topic is not None:
         stmt = stmt.where(Question.topic == topic)
+
+    if difficulty is not None:
+        stmt = stmt.where(Question.difficulty == difficulty)
+
+    if tags:
+        normalized_tags = [tag.strip() for tag in tags if tag.strip()]
+        if len(normalized_tags) != len(tags):
+            raise HTTPException(status_code=422, detail="Tags must be non-empty strings")
+        for tag in normalized_tags:
+            stmt = stmt.where(Question.tags.like(f"%{tag}%"))
+
     res = await db.execute(stmt)
     return [
         {
             "id": q.id,
+            "text": q.text,
             "topic": q.topic,
             "difficulty": q.difficulty,
-            "text": q.text,
+            "tags": [tag.strip() for tag in q.tags.split(",") if tag.strip()],
+            "created_at": q.created_at,
             "sample_answer": q.sample_answer,
         }
         for q in res.scalars().all()
