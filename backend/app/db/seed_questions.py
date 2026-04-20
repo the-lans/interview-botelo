@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -44,7 +44,7 @@ async def seed_questions() -> int:
                     topic=item["topic"],
                     difficulty=item["difficulty"],
                     tags=item["tags"],
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
                     sample_answer=item["sample_answer"],
                 )
             )

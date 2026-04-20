@@ -8,7 +8,7 @@ import subprocess
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select, func
+from sqlalchemy import select, func, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from striprtf.striprtf import rtf_to_text
 from docx import Document
@@ -340,8 +340,10 @@ async def get_questions(
         normalized_tags = [tag.strip() for tag in tags if tag.strip()]
         if len(normalized_tags) != len(tags):
             raise HTTPException(status_code=422, detail="Tags must be non-empty strings")
+        tags_with_commas = func.concat(",", func.replace(Question.tags, " ", ""), ",").cast(String)
         for tag in normalized_tags:
-            stmt = stmt.where(Question.tags.like(f"%{tag}%"))
+            normalized_tag = tag.replace(" ", "")
+            stmt = stmt.where(tags_with_commas.like(f"%,{normalized_tag},%"))
 
     res = await db.execute(stmt)
     return [
