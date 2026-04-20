@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fetchProgress, generatePlan, ingestVacancy, logout } from "../../lib/api";
 
@@ -17,9 +17,24 @@ const defaultBrief = {
   language: "RU",
 };
 
+const priorityOptions = [
+  "Алгоритмы",
+  "System Design",
+  "Python Internals",
+  "SQL",
+  "Backend Architecture",
+  "Поведенческая часть (behavioral)",
+];
+
+const statusTypeMap = {
+  success: "alert-success",
+  error: "alert-error",
+  info: "alert-info",
+};
+
 export default function DashboardPage() {
   const [progress, setProgress] = useState([]);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState({ type: "", message: "" });
   const [needsLogin, setNeedsLogin] = useState(false);
   const [vacancyMode, setVacancyMode] = useState("raw_text");
   const [vacancyInput, setVacancyInput] = useState("");
@@ -27,7 +42,14 @@ export default function DashboardPage() {
   const [resumeText, setResumeText] = useState("");
   const [brief, setBrief] = useState(defaultBrief);
   const [planResult, setPlanResult] = useState(null);
+  const [isIngestLoading, setIsIngestLoading] = useState(false);
+  const [isGenerateLoading, setIsGenerateLoading] = useState(false);
+  const [isLogoutLoading, setIsLogoutLoading] = useState(false);
   const router = useRouter();
+
+  const canGeneratePlan = useMemo(() => {
+    return Boolean(vacancyText.trim() && brief.target_role.trim());
+  }, [vacancyText, brief.target_role]);
 
   useEffect(() => {
     let mounted = true;
@@ -38,14 +60,17 @@ export default function DashboardPage() {
         }
       })
       .catch((error) => {
-        if (mounted) {
-          if (error.status === 401) {
-            setNeedsLogin(true);
-            setStatus("Нужно войти, чтобы увидеть прогресс.");
-          } else {
-            setStatus(error.message);
-          }
+        if (!mounted) {
+          return;
         }
+
+        if (error.status === 401) {
+          setNeedsLogin(true);
+          setStatus({ type: "info", message: "Нужно войти, чтобы увидеть прогресс." });
+          return;
+        }
+
+        setStatus({ type: "error", message: error.message || "Не удалось загрузить прогресс." });
       });
 
     return () => {
@@ -54,13 +79,16 @@ export default function DashboardPage() {
   }, []);
 
   const handleLogout = async () => {
-    setStatus("");
+    setStatus({ type: "", message: "" });
+    setIsLogoutLoading(true);
     try {
       await logout();
-      setStatus("Вы вышли из системы");
+      setStatus({ type: "success", message: "Вы вышли из системы." });
       router.push("/login");
     } catch (error) {
-      setStatus(error.message);
+      setStatus({ type: "error", message: error.message || "Не удалось выйти из системы." });
+    } finally {
+      setIsLogoutLoading(false);
     }
   };
 
@@ -68,27 +96,44 @@ export default function DashboardPage() {
     setBrief((prev) => ({
       ...prev,
       priorities: checked
-        ? [...prev.priorities, value]
+        ? [...new Set([...prev.priorities, value])]
         : prev.priorities.filter((item) => item !== value),
     }));
   };
 
   const handleIngestVacancy = async () => {
-    setStatus("");
+    setStatus({ type: "", message: "" });
+    if (!vacancyInput.trim()) {
+      setStatus({ type: "error", message: "Заполните текст вакансии или ссылку." });
+      return;
+    }
+
+    setIsIngestLoading(true);
     try {
       const payload = vacancyMode === "url" ? { url: vacancyInput } : { raw_text: vacancyInput };
       const response = await ingestVacancy(payload);
-      setVacancyText(response.vacancy_text);
-      setStatus("Текст вакансии успешно обработан");
+      setVacancyText(response.vacancy_text || "");
+      setStatus({ type: "success", message: "Текст вакансии успешно обработан." });
     } catch (error) {
-      setStatus(error.message);
+      setStatus({ type: "error", message: error.message || "Ошибка обработки вакансии." });
+    } finally {
+      setIsIngestLoading(false);
     }
   };
 
   const handleGeneratePlan = async () => {
-    setStatus("");
+    setStatus({ type: "", message: "" });
     setPlanResult(null);
 
+    if (!canGeneratePlan) {
+      setStatus({
+        type: "info",
+        message: "Для генерации заполните целевую роль и обработайте вакансию.",
+      });
+      return;
+    }
+
+    setIsGenerateLoading(true);
     try {
       const response = await generatePlan({
         resume_text: resumeText || undefined,
@@ -110,149 +155,260 @@ export default function DashboardPage() {
       });
 
       setPlanResult(response);
-      setStatus("План подготовки сгенерирован");
+      setStatus({ type: "success", message: "План подготовки сгенерирован." });
     } catch (error) {
-      setStatus(error.message);
+      setStatus({ type: "error", message: error.message || "Ошибка генерации плана." });
+    } finally {
+      setIsGenerateLoading(false);
     }
   };
 
   return (
-    <section className="card">
-      <h1>Dashboard</h1>
-      <button type="button" onClick={handleLogout}>
-        Выйти
-      </button>
-      {status && <p><small>{status}</small></p>}
-      {needsLogin && (
-        <p>
-          <a href="/login">Перейти к входу</a>
-        </p>
-      )}
-
-      <h2>План подготовки</h2>
-      <p><small>Бриф включает 8 полей (без дневного трекинга).</small></p>
-
-      <label>
-        Текст резюме (опционально, если уже загружено резюме)
-        <textarea value={resumeText} onChange={(e) => setResumeText(e.target.value)} rows={4} />
-      </label>
-
-      <label>
-        Источник вакансии
-        <select value={vacancyMode} onChange={(e) => setVacancyMode(e.target.value)}>
-          <option value="raw_text">Полный текст вакансии</option>
-          <option value="url">Ссылка на вакансию</option>
-        </select>
-      </label>
-      <textarea
-        rows={4}
-        value={vacancyInput}
-        onChange={(e) => setVacancyInput(e.target.value)}
-        placeholder={vacancyMode === "url" ? "https://..." : "Вставьте текст вакансии"}
-      />
-      <button type="button" onClick={handleIngestVacancy}>Обработать вакансию</button>
-
-      <label>
-        Целевая роль/позиция
-        <input value={brief.target_role} onChange={(e) => setBrief({ ...brief, target_role: e.target.value })} />
-      </label>
-
-      <label>
-        Уровень
-        <select value={brief.level} onChange={(e) => setBrief({ ...brief, level: e.target.value })}>
-          <option>Junior</option><option>Junior+</option><option>Middle</option><option>Middle+</option><option>Senior</option>
-        </select>
-      </label>
-
-      <label>
-        Горизонт подготовки
-        <select
-          value={brief.horizon_weeks}
-          onChange={(e) => setBrief({ ...brief, horizon_weeks: Number(e.target.value) })}
-        >
-          <option value={2}>2 недели</option>
-          <option value={4}>4 недели</option>
-          <option value={6}>6 недель</option>
-        </select>
-      </label>
-
-      <label>
-        Часы в будни
-        <input
-          type="number"
-          value={brief.weekday_hours}
-          onChange={(e) => setBrief({ ...brief, weekday_hours: Number(e.target.value) })}
-        />
-      </label>
-
-      <label>
-        Часы в выходные
-        <input
-          type="number"
-          value={brief.weekend_hours}
-          onChange={(e) => setBrief({ ...brief, weekend_hours: Number(e.target.value) })}
-        />
-      </label>
-
-      <label>
-        Формат плана
-        <select value={brief.plan_format} onChange={(e) => setBrief({ ...brief, plan_format: e.target.value })}>
-          <option value="themes">темы</option>
-          <option value="themes+practice">темы+практика</option>
-          <option value="themes+practice+mock_interview">темы+практика+mock interview</option>
-        </select>
-      </label>
-
-      <fieldset>
-        <legend>Приоритеты</legend>
-        {["Алгоритмы", "System Design", "Python Internals", "SQL", "Backend Architecture", "Поведенческая часть (behavioral)"]
-          .map((item) => (
-            <label key={item} style={{ display: "block" }}>
-              <input
-                type="checkbox"
-                checked={brief.priorities.includes(item)}
-                onChange={(e) => handlePriorityChange(item, e.target.checked)}
-              />
-              {item}
-            </label>
-          ))}
-        <label>
-          Другое
-          <input value={brief.other_priority} onChange={(e) => setBrief({ ...brief, other_priority: e.target.value })} />
-        </label>
-      </fieldset>
-
-      <label>
-        Ограничения/предпочтения
-        <textarea value={brief.constraints} onChange={(e) => setBrief({ ...brief, constraints: e.target.value })} rows={3} />
-      </label>
-
-      <label>
-        Язык подготовки
-        <select value={brief.language} onChange={(e) => setBrief({ ...brief, language: e.target.value })}>
-          <option value="RU">RU</option>
-          <option value="EN">EN</option>
-        </select>
-      </label>
-
-      <button type="button" onClick={handleGeneratePlan}>Сгенерировать план</button>
-
-      {planResult && (
+    <section className="dashboard">
+      <header className="card section header-section">
         <div>
-          <h3>Результат (plan_id: {planResult.plan_id})</h3>
-          <pre>{JSON.stringify(planResult.plan, null, 2)}</pre>
+          <h1>Dashboard подготовки</h1>
+          <p className="muted">Соберите данные, сгенерируйте план и отслеживайте прогресс по шагам.</p>
+        </div>
+        <button type="button" onClick={handleLogout} disabled={isLogoutLoading}>
+          {isLogoutLoading ? "Выходим..." : "Выйти"}
+        </button>
+      </header>
+
+      {status.message && (
+        <div className={`alert ${statusTypeMap[status.type] || "alert-info"}`} role="status" aria-live="polite">
+          {status.message}
         </div>
       )}
 
-      <h2>Прогресс</h2>
-      {progress.length === 0 && <p><small>Пока нет данных.</small></p>}
-      <ul>
-        {progress.map((item) => (
-          <li key={`${item.topic}-${item.updated_at}`}>
-            {item.topic}: {item.status}
-          </li>
-        ))}
-      </ul>
+      {needsLogin && (
+        <div className="card section">
+          <a href="/login">Перейти к входу</a>
+        </div>
+      )}
+
+      <div className="card section">
+        <h2>Шаг 1. Резюме и вакансия</h2>
+        <div className="field">
+          <label htmlFor="resume-text">Текст резюме (опционально)</label>
+          <textarea
+            id="resume-text"
+            value={resumeText}
+            onChange={(e) => setResumeText(e.target.value)}
+            rows={5}
+            placeholder="Вставьте резюме, если хотите уточнить персональные рекомендации"
+          />
+        </div>
+
+        <div className="field-grid">
+          <div className="field">
+            <label htmlFor="vacancy-source">Источник вакансии</label>
+            <select id="vacancy-source" value={vacancyMode} onChange={(e) => setVacancyMode(e.target.value)}>
+              <option value="raw_text">Полный текст вакансии</option>
+              <option value="url">Ссылка на вакансию</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="field">
+          <label htmlFor="vacancy-input">Входные данные вакансии</label>
+          <textarea
+            id="vacancy-input"
+            rows={5}
+            value={vacancyInput}
+            onChange={(e) => setVacancyInput(e.target.value)}
+            placeholder={vacancyMode === "url" ? "https://..." : "Вставьте текст вакансии"}
+          />
+        </div>
+
+        <button type="button" onClick={handleIngestVacancy} disabled={isIngestLoading}>
+          {isIngestLoading ? "Обрабатываем..." : "Обработать вакансию"}
+        </button>
+
+        <div className="field">
+          <label htmlFor="vacancy-processed">Обработанный текст вакансии</label>
+          <textarea id="vacancy-processed" rows={5} value={vacancyText} readOnly placeholder="Появится после обработки" />
+        </div>
+      </div>
+
+      <div className="card section">
+        <h2>Шаг 2. Бриф подготовки</h2>
+        <div className="field-grid">
+          <div className="field">
+            <label htmlFor="target-role">Целевая роль</label>
+            <input
+              id="target-role"
+              value={brief.target_role}
+              onChange={(e) => setBrief({ ...brief, target_role: e.target.value })}
+              placeholder="Backend Engineer"
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="level">Уровень</label>
+            <select id="level" value={brief.level} onChange={(e) => setBrief({ ...brief, level: e.target.value })}>
+              <option>Junior</option>
+              <option>Junior+</option>
+              <option>Middle</option>
+              <option>Middle+</option>
+              <option>Senior</option>
+            </select>
+          </div>
+
+          <div className="field">
+            <label htmlFor="horizon">Горизонт подготовки</label>
+            <select
+              id="horizon"
+              value={brief.horizon_weeks}
+              onChange={(e) => setBrief({ ...brief, horizon_weeks: Number(e.target.value) })}
+            >
+              <option value={2}>2 недели</option>
+              <option value={4}>4 недели</option>
+              <option value={6}>6 недель</option>
+            </select>
+          </div>
+
+          <div className="field">
+            <label htmlFor="plan-format">Формат плана</label>
+            <select
+              id="plan-format"
+              value={brief.plan_format}
+              onChange={(e) => setBrief({ ...brief, plan_format: e.target.value })}
+            >
+              <option value="themes">темы</option>
+              <option value="themes+practice">темы+практика</option>
+              <option value="themes+practice+mock_interview">темы+практика+mock interview</option>
+            </select>
+          </div>
+
+          <div className="field">
+            <label htmlFor="weekday-hours">Часы в будни</label>
+            <input
+              id="weekday-hours"
+              type="number"
+              min={0}
+              value={brief.weekday_hours}
+              onChange={(e) => setBrief({ ...brief, weekday_hours: Number(e.target.value) })}
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="weekend-hours">Часы в выходные</label>
+            <input
+              id="weekend-hours"
+              type="number"
+              min={0}
+              value={brief.weekend_hours}
+              onChange={(e) => setBrief({ ...brief, weekend_hours: Number(e.target.value) })}
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="language">Язык подготовки</label>
+            <select id="language" value={brief.language} onChange={(e) => setBrief({ ...brief, language: e.target.value })}>
+              <option value="RU">RU</option>
+              <option value="EN">EN</option>
+            </select>
+          </div>
+        </div>
+
+        <fieldset className="priority-fieldset">
+          <legend>Приоритеты</legend>
+          <div className="priority-grid">
+            {priorityOptions.map((item) => (
+              <label key={item} className="priority-item">
+                <input
+                  type="checkbox"
+                  checked={brief.priorities.includes(item)}
+                  onChange={(e) => handlePriorityChange(item, e.target.checked)}
+                />
+                <span>{item}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <div className="field-grid">
+          <div className="field">
+            <label htmlFor="other-priority">Другое (опционально)</label>
+            <input
+              id="other-priority"
+              value={brief.other_priority}
+              onChange={(e) => setBrief({ ...brief, other_priority: e.target.value })}
+            />
+          </div>
+        </div>
+
+        <div className="field">
+          <label htmlFor="constraints">Ограничения и предпочтения</label>
+          <textarea
+            id="constraints"
+            value={brief.constraints}
+            onChange={(e) => setBrief({ ...brief, constraints: e.target.value })}
+            rows={4}
+          />
+        </div>
+      </div>
+
+      <div className="card section">
+        <h2>Шаг 3. Генерация плана</h2>
+        <p className="muted">Минимум для запуска: обработанная вакансия и целевая роль.</p>
+        <button type="button" onClick={handleGeneratePlan} disabled={!canGeneratePlan || isGenerateLoading}>
+          {isGenerateLoading ? "Генерируем..." : "Сгенерировать план"}
+        </button>
+      </div>
+
+      <div className="card section">
+        <h2>Результат плана</h2>
+        {!planResult && <p className="muted">После генерации здесь появится структура плана.</p>}
+        {planResult && (
+          <div className="plan-result">
+            <p>
+              <strong>Plan ID:</strong> {planResult.plan_id || "-"}
+            </p>
+
+            {Array.isArray(planResult?.plan?.weeks) && planResult.plan.weeks.length > 0 ? (
+              <div className="plan-list">
+                {planResult.plan.weeks.map((week, index) => (
+                  <div key={week.week || index} className="plan-item">
+                    <h3>Неделя {week.week || index + 1}</h3>
+                    {Array.isArray(week.topics) && week.topics.length > 0 ? (
+                      <ul>
+                        {week.topics.map((topic) => (
+                          <li key={topic}>{topic}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="muted">Темы не указаны.</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <pre>{JSON.stringify(planResult.plan, null, 2)}</pre>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="card section">
+        <h2>Прогресс</h2>
+        {progress.length === 0 ? (
+          <div className="empty-state">
+            <p>Пока нет записей прогресса.</p>
+            <p className="muted">Сгенерируйте план и начните отмечать выполнение шагов.</p>
+          </div>
+        ) : (
+          <ul className="progress-list">
+            {progress.map((item) => (
+              <li key={`${item.topic}-${item.updated_at}`} className="progress-item">
+                <span>{item.topic}</span>
+                <span className="status-badge">{item.status}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }
