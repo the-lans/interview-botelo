@@ -42,6 +42,27 @@ async def test_signup_login(client):
 
 
 @pytest.mark.asyncio
+async def test_login_with_invalid_credentials(client):
+    await client.post("/auth/signup", json={"email": "bad-login@test.com", "password": "pass1234"})
+
+    resp = await client.post(
+        "/auth/login",
+        json={"email": "bad-login@test.com", "password": "wrong-pass"},
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_signup_duplicate_email(client):
+    payload = {"email": "duplicate@test.com", "password": "pass1234"}
+    first = await client.post("/auth/signup", json=payload)
+    second = await client.post("/auth/signup", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_protected_requires_auth(client):
     resp = await client.get("/progress")
     assert resp.status_code == 401
@@ -68,3 +89,27 @@ async def test_resend_verification_rotates_token(client):
         res = await session.execute(select(User).where(User.email == "resend@test.com"))
         user = res.scalar_one()
         assert user.email_verification_token != old_token_hash
+
+
+@pytest.mark.asyncio
+async def test_resend_verification_for_verified_user_is_idempotent(client):
+    from app.db.session import SessionLocal
+
+    await client.post("/auth/signup", json={"email": "verified@test.com", "password": "pass1234"})
+
+    plain_token = "verified-known-token"
+    async with SessionLocal() as session:
+        res = await session.execute(select(User).where(User.email == "verified@test.com"))
+        user = res.scalar_one()
+        user.email_verification_token = hash_email_token(plain_token)
+        await session.commit()
+
+    await client.get(f"/auth/verify?token={plain_token}")
+
+    resp = await client.post(
+        "/auth/resend-verification",
+        json={"email": "verified@test.com"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["detail"] == "verification_sent"
