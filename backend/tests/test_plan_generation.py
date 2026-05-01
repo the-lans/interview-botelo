@@ -39,15 +39,17 @@ async def test_vacancy_ingest_raw_text_happy_path(client):
 
 
 @pytest.mark.asyncio
-async def test_vacancy_ingest_validates_source(client):
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"url": "https://example.com", "raw_text": "x"},
+        {},
+    ],
+)
+async def test_vacancy_ingest_validates_source(client, payload):
     await _signup_verify_login(client, email="vacancy_validation@test.com")
 
-    resp = await client.post(
-        "/vacancy/ingest", json={"url": "https://example.com", "raw_text": "x"}
-    )
-    assert resp.status_code == 422
-
-    resp = await client.post("/vacancy/ingest", json={})
+    resp = await client.post("/vacancy/ingest", json=payload)
     assert resp.status_code == 422
 
 

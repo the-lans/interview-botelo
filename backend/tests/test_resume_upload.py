@@ -99,52 +99,60 @@ async def test_upload_resume_text_happy_path(client):
 
 
 @pytest.mark.asyncio
-async def test_upload_resume_unsupported_extension(client):
-    await _signup_verify_login(client, email="resume_ext@test.com")
+@pytest.mark.parametrize(
+    ("email", "filename", "payload", "content_type", "expected_status", "expected_detail"),
+    [
+        (
+            "resume_ext@test.com",
+            "resume.pdf",
+            b"hello",
+            "application/pdf",
+            415,
+            "Unsupported file extension",
+        ),
+        (
+            "resume_mime@test.com",
+            "resume.md",
+            b"hello",
+            "application/json",
+            415,
+            "Unsupported MIME type",
+        ),
+        (
+            "resume_empty@test.com",
+            "resume.md",
+            b"",
+            "text/markdown",
+            400,
+            "Empty file",
+        ),
+        (
+            "resume_large@test.com",
+            "resume.md",
+            b"a" * (5 * 1024 * 1024 + 1),
+            "text/markdown",
+            413,
+            "File too large",
+        ),
+    ],
+)
+async def test_upload_resume_validation_errors(
+    client,
+    email,
+    filename,
+    payload,
+    content_type,
+    expected_status,
+    expected_detail,
+):
+    await _signup_verify_login(client, email=email)
 
     resp = await client.post(
         "/upload/resume",
-        files={"file": ("resume.pdf", b"hello", "application/pdf")},
+        files={"file": (filename, payload, content_type)},
     )
-    assert resp.status_code == 415
-    assert resp.json()["detail"] == "Unsupported file extension"
-
-
-@pytest.mark.asyncio
-async def test_upload_resume_unsupported_mime(client):
-    await _signup_verify_login(client, email="resume_mime@test.com")
-
-    resp = await client.post(
-        "/upload/resume",
-        files={"file": ("resume.md", b"hello", "application/json")},
-    )
-    assert resp.status_code == 415
-    assert resp.json()["detail"] == "Unsupported MIME type"
-
-
-@pytest.mark.asyncio
-async def test_upload_resume_empty_file(client):
-    await _signup_verify_login(client, email="resume_empty@test.com")
-
-    resp = await client.post(
-        "/upload/resume",
-        files={"file": ("resume.md", b"", "text/markdown")},
-    )
-    assert resp.status_code == 400
-    assert resp.json()["detail"] == "Empty file"
-
-
-@pytest.mark.asyncio
-async def test_upload_resume_too_large_file(client):
-    await _signup_verify_login(client, email="resume_large@test.com")
-
-    large_payload = b"a" * (5 * 1024 * 1024 + 1)
-    resp = await client.post(
-        "/upload/resume",
-        files={"file": ("resume.md", large_payload, "text/markdown")},
-    )
-    assert resp.status_code == 413
-    assert resp.json()["detail"] == "File too large"
+    assert resp.status_code == expected_status
+    assert resp.json()["detail"] == expected_detail
 
 
 @pytest.mark.asyncio
