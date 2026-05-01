@@ -5,30 +5,33 @@ import pytest
 from app.models.question import Question
 
 
-@pytest.mark.asyncio
-async def test_get_questions_without_filters_returns_all(client):
+async def _seed_questions(items):
     from app.db.session import SessionLocal
 
     async with SessionLocal() as db:
         db.add_all(
             [
                 Question(
-                    text="Explain Python GIL",
-                    topic="python",
-                    difficulty="middle",
-                    tags="python,concurrency",
+                    text=item["text"],
+                    topic=item["topic"],
+                    difficulty=item["difficulty"],
+                    tags=item["tags"],
                     created_at=datetime.now(timezone.utc),
-                ),
-                Question(
-                    text="What is index in PostgreSQL?",
-                    topic="database",
-                    difficulty="junior",
-                    tags="postgres,index",
-                    created_at=datetime.now(timezone.utc),
-                ),
+                )
+                for item in items
             ]
         )
         await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_get_questions_without_filters_returns_all(client):
+    await _seed_questions(
+        [
+            {"text": "Explain Python GIL", "topic": "python", "difficulty": "middle", "tags": "python,concurrency"},
+            {"text": "What is index in PostgreSQL?", "topic": "database", "difficulty": "junior", "tags": "postgres,index"},
+        ]
+    )
 
     response = await client.get("/questions")
 
@@ -39,138 +42,60 @@ async def test_get_questions_without_filters_returns_all(client):
 
 
 @pytest.mark.asyncio
-async def test_get_questions_topic_filter(client):
-    from app.db.session import SessionLocal
-
-    async with SessionLocal() as db:
-        db.add_all(
+@pytest.mark.parametrize(
+    ("params", "items", "expected_len", "field", "expected_value"),
+    [
+        (
+            {"topic": "python"},
             [
-                Question(
-                    text="Q1",
-                    topic="python",
-                    difficulty="middle",
-                    tags="python",
-                    created_at=datetime.now(timezone.utc),
-                ),
-                Question(
-                    text="Q2",
-                    topic="system-design",
-                    difficulty="senior",
-                    tags="architecture",
-                    created_at=datetime.now(timezone.utc),
-                ),
-            ]
-        )
-        await db.commit()
+                {"text": "Q1", "topic": "python", "difficulty": "middle", "tags": "python"},
+                {"text": "Q2", "topic": "system-design", "difficulty": "senior", "tags": "architecture"},
+            ],
+            1,
+            "topic",
+            "python",
+        ),
+        (
+            {"difficulty": "senior"},
+            [
+                {"text": "Q1", "topic": "python", "difficulty": "junior", "tags": "python"},
+                {"text": "Q2", "topic": "python", "difficulty": "senior", "tags": "python"},
+            ],
+            1,
+            "difficulty",
+            "senior",
+        ),
+        (
+            [("tags", "asyncio")],
+            [
+                {"text": "Q1", "topic": "python", "difficulty": "middle", "tags": "python,asyncio"},
+                {"text": "Q2", "topic": "python", "difficulty": "middle", "tags": "python,oop"},
+            ],
+            1,
+            "text",
+            "Q1",
+        ),
+        (
+            [("topic", "python"), ("difficulty", "middle"), ("tags", "asyncio")],
+            [
+                {"text": "Q1", "topic": "python", "difficulty": "middle", "tags": "python,asyncio"},
+                {"text": "Q2", "topic": "python", "difficulty": "senior", "tags": "python,asyncio"},
+            ],
+            1,
+            "text",
+            "Q1",
+        ),
+    ],
+)
+async def test_get_questions_filters(client, params, items, expected_len, field, expected_value):
+    await _seed_questions(items)
 
-    response = await client.get("/questions", params={"topic": "python"})
+    response = await client.get("/questions", params=params)
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload) == 1
-    assert payload[0]["topic"] == "python"
-
-
-@pytest.mark.asyncio
-async def test_get_questions_difficulty_filter(client):
-    from app.db.session import SessionLocal
-
-    async with SessionLocal() as db:
-        db.add_all(
-            [
-                Question(
-                    text="Q1",
-                    topic="python",
-                    difficulty="junior",
-                    tags="python",
-                    created_at=datetime.now(timezone.utc),
-                ),
-                Question(
-                    text="Q2",
-                    topic="python",
-                    difficulty="senior",
-                    tags="python",
-                    created_at=datetime.now(timezone.utc),
-                ),
-            ]
-        )
-        await db.commit()
-
-    response = await client.get("/questions", params={"difficulty": "senior"})
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert len(payload) == 1
-    assert payload[0]["difficulty"] == "senior"
-
-
-@pytest.mark.asyncio
-async def test_get_questions_tags_filter(client):
-    from app.db.session import SessionLocal
-
-    async with SessionLocal() as db:
-        db.add_all(
-            [
-                Question(
-                    text="Q1",
-                    topic="python",
-                    difficulty="middle",
-                    tags="python,asyncio",
-                    created_at=datetime.now(timezone.utc),
-                ),
-                Question(
-                    text="Q2",
-                    topic="python",
-                    difficulty="middle",
-                    tags="python,oop",
-                    created_at=datetime.now(timezone.utc),
-                ),
-            ]
-        )
-        await db.commit()
-
-    response = await client.get("/questions", params=[("tags", "asyncio")])
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert len(payload) == 1
-    assert payload[0]["text"] == "Q1"
-
-
-@pytest.mark.asyncio
-async def test_get_questions_combined_filters(client):
-    from app.db.session import SessionLocal
-
-    async with SessionLocal() as db:
-        db.add_all(
-            [
-                Question(
-                    text="Q1",
-                    topic="python",
-                    difficulty="middle",
-                    tags="python,asyncio",
-                    created_at=datetime.now(timezone.utc),
-                ),
-                Question(
-                    text="Q2",
-                    topic="python",
-                    difficulty="senior",
-                    tags="python,asyncio",
-                    created_at=datetime.now(timezone.utc),
-                ),
-            ]
-        )
-        await db.commit()
-
-    response = await client.get(
-        "/questions",
-        params=[("topic", "python"), ("difficulty", "middle"), ("tags", "asyncio")],
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert len(payload) == 1
-    assert payload[0]["text"] == "Q1"
+    assert len(payload) == expected_len
+    assert payload[0][field] == expected_value
 
 
 @pytest.mark.asyncio
@@ -198,19 +123,9 @@ async def test_get_questions_empty_db_returns_empty_list(client):
 
 @pytest.mark.asyncio
 async def test_get_questions_filters_without_matches_returns_empty_list(client):
-    from app.db.session import SessionLocal
-
-    async with SessionLocal() as db:
-        db.add(
-            Question(
-                text="Q1",
-                topic="python",
-                difficulty="middle",
-                tags="python,asyncio",
-                created_at=datetime.now(timezone.utc),
-            )
-        )
-        await db.commit()
+    await _seed_questions(
+        [{"text": "Q1", "topic": "python", "difficulty": "middle", "tags": "python,asyncio"}]
+    )
 
     response = await client.get("/questions", params={"topic": "go"})
 
