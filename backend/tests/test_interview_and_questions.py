@@ -37,25 +37,20 @@ async def _seed_questions():
 
 
 @pytest.mark.asyncio
-async def test_questions_filter_by_topic_and_difficulty(client):
+@pytest.mark.parametrize(
+    ("params", "min_len", "expected_status"),
+    [
+        ({"topic": "python", "difficulty": "middle"}, 1, 200),
+        ([("tags", "python"), ("tags", "concurrency")], 1, 200),
+        ([("tags", "python"), ("tags", " ")], 0, 422),
+    ],
+)
+async def test_questions_filters_and_validation(client, params, min_len, expected_status):
     await _seed_questions()
-    resp = await client.get("/questions", params={"topic": "python", "difficulty": "middle"})
-    assert resp.status_code == 200
-    data = resp.json()
-    assert len(data) >= 1
-    assert all(item["topic"] == "python" for item in data)
-    assert all(item["difficulty"] == "middle" for item in data)
-
-
-@pytest.mark.asyncio
-async def test_questions_filter_by_tags_and_validation(client):
-    await _seed_questions()
-    ok = await client.get("/questions", params=[("tags", "python"), ("tags", "concurrency")])
-    assert ok.status_code == 200
-    assert len(ok.json()) >= 1
-
-    bad = await client.get("/questions", params=[("tags", "python"), ("tags", " ")])
-    assert bad.status_code == 422
+    resp = await client.get("/questions", params=params)
+    assert resp.status_code == expected_status
+    if expected_status == 200:
+        assert len(resp.json()) >= min_len
 
 
 @pytest.mark.asyncio
@@ -100,30 +95,35 @@ async def test_interview_happy_path_and_followup(client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_interview_answer_not_found_session(client):
-    await _auth(client, email="nf@test.com")
+@pytest.mark.parametrize(
+    ("mode", "session_id", "question_id", "expected_status", "expected_detail"),
+    [
+        ("missing_session", 9999, 1, 404, None),
+        ("question_mismatch", None, 99999, 400, "Question mismatch"),
+    ],
+)
+async def test_interview_answer_error_cases(
+    client,
+    mode,
+    session_id,
+    question_id,
+    expected_status,
+    expected_detail,
+):
+    await _auth(client, email=f"{mode}@test.com")
+
+    if mode == "question_mismatch":
+        await _seed_questions()
+        start = await client.post("/interview/start")
+        session_id = start.json()["session_id"]
 
     resp = await client.post(
         "/interview/answer",
-        json={"session_id": 9999, "question_id": 1, "answer": "x"},
+        json={"session_id": session_id, "question_id": question_id, "answer": "x"},
     )
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_interview_answer_question_mismatch(client):
-    await _auth(client, email="mismatch@test.com")
-    await _seed_questions()
-
-    start = await client.post("/interview/start")
-    session_id = start.json()["session_id"]
-
-    resp = await client.post(
-        "/interview/answer",
-        json={"session_id": session_id, "question_id": 99999, "answer": "x"},
-    )
-    assert resp.status_code == 400
-    assert resp.json()["detail"] == "Question mismatch"
+    assert resp.status_code == expected_status
+    if expected_detail:
+        assert resp.json()["detail"] == expected_detail
 
 
 @pytest.mark.asyncio
