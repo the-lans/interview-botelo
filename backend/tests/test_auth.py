@@ -10,11 +10,9 @@ async def test_signup_login(client):
     resp = await client.post("/auth/signup", json={"email": "a@b.com", "password": "pass1234"})
     assert resp.status_code == 200
 
-    # Login blocked until email verified
     resp = await client.post("/auth/login", json={"email": "a@b.com", "password": "pass1234"})
     assert resp.status_code == 403
 
-    # Verify email
     from app.db.session import SessionLocal
 
     async with SessionLocal() as session:
@@ -25,7 +23,6 @@ async def test_signup_login(client):
     assert token_hash is not None
     assert len(token_hash) == 64
 
-    # Для теста корректности верификации напрямую подменяем токен известным значением.
     plain_token = "known-token-for-test"
     async with SessionLocal() as session:
         res = await session.execute(select(User).where(User.email == "a@b.com"))
@@ -42,14 +39,21 @@ async def test_signup_login(client):
 
 
 @pytest.mark.asyncio
-async def test_login_with_invalid_credentials(client):
-    await client.post("/auth/signup", json={"email": "bad-login@test.com", "password": "pass1234"})
+@pytest.mark.parametrize(
+    ("email", "password", "expected_status"),
+    [
+        ("bad-login@test.com", "wrong-pass", 401),
+        ("bad-login-2@test.com", "incorrect", 401),
+    ],
+)
+async def test_login_with_invalid_credentials(client, email, password, expected_status):
+    await client.post("/auth/signup", json={"email": email, "password": "pass1234"})
 
     resp = await client.post(
         "/auth/login",
-        json={"email": "bad-login@test.com", "password": "wrong-pass"},
+        json={"email": email, "password": password},
     )
-    assert resp.status_code == 401
+    assert resp.status_code == expected_status
 
 
 @pytest.mark.asyncio
@@ -69,47 +73,47 @@ async def test_protected_requires_auth(client):
 
 
 @pytest.mark.asyncio
-async def test_resend_verification_rotates_token(client):
+@pytest.mark.parametrize(
+    ("email", "verify_before_resend", "expected_detail", "expect_token_rotated"),
+    [
+        ("resend@test.com", False, "verification_sent", True),
+        ("verified@test.com", True, "verification_sent", False),
+    ],
+)
+async def test_resend_verification_behaviour(
+    client,
+    email,
+    verify_before_resend,
+    expected_detail,
+    expect_token_rotated,
+):
     from app.db.session import SessionLocal
 
-    await client.post("/auth/signup", json={"email": "resend@test.com", "password": "pass1234"})
+    await client.post("/auth/signup", json={"email": email, "password": "pass1234"})
 
+    plain_token = f"token-{email}"
     async with SessionLocal() as session:
-        res = await session.execute(select(User).where(User.email == "resend@test.com"))
+        res = await session.execute(select(User).where(User.email == email))
         user = res.scalar_one()
         old_token_hash = user.email_verification_token
-
-    resp = await client.post(
-        "/auth/resend-verification",
-        json={"email": "resend@test.com"},
-    )
-    assert resp.status_code == 200
-
-    async with SessionLocal() as session:
-        res = await session.execute(select(User).where(User.email == "resend@test.com"))
-        user = res.scalar_one()
-        assert user.email_verification_token != old_token_hash
-
-
-@pytest.mark.asyncio
-async def test_resend_verification_for_verified_user_is_idempotent(client):
-    from app.db.session import SessionLocal
-
-    await client.post("/auth/signup", json={"email": "verified@test.com", "password": "pass1234"})
-
-    plain_token = "verified-known-token"
-    async with SessionLocal() as session:
-        res = await session.execute(select(User).where(User.email == "verified@test.com"))
-        user = res.scalar_one()
         user.email_verification_token = hash_email_token(plain_token)
         await session.commit()
 
-    await client.get(f"/auth/verify?token={plain_token}")
+    if verify_before_resend:
+        await client.get(f"/auth/verify?token={plain_token}")
 
     resp = await client.post(
         "/auth/resend-verification",
-        json={"email": "verified@test.com"},
+        json={"email": email},
     )
 
     assert resp.status_code == 200
-    assert resp.json()["detail"] == "verification_sent"
+    assert resp.json()["detail"] == expected_detail
+
+    async with SessionLocal() as session:
+        res = await session.execute(select(User).where(User.email == email))
+        user = res.scalar_one()
+        if expect_token_rotated:
+            assert user.email_verification_token != old_token_hash
+        else:
+            assert user.email_verification_token is None
