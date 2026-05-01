@@ -10,7 +10,7 @@ export default function RootLayout({ children }) {
     <html lang="ru">
       <body>
         <main>
-          <nav>
+          <nav className="top-nav" aria-label="Основная навигация">
             <a href="/login">Login</a>
             <a href="/signup">Signup</a>
             <a href="/dashboard">Dashboard</a>

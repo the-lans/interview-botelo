@@ -14,9 +14,28 @@ body {
 }
 
 main {
-  max-width: 960px;
+  width: min(100%, 1060px);
   margin: 0 auto;
-  padding: 48px 16px;
+  padding: clamp(20px, 4vw, 48px) clamp(12px, 2.5vw, 20px);
+}
+
+.top-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.top-nav a {
+  text-decoration: none;
+  color: #255ac2;
+  font-weight: 700;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.top-nav a:hover {
+  background: #e8f0ff;
 }
 
 h1,
@@ -38,6 +57,11 @@ p {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.dashboard > .card {
+  width: 100%;
+  overflow: hidden;
 }
 
 .section h2 {
@@ -69,6 +93,11 @@ small {
   gap: 12px;
 }
 
+.field-grid > *,
+.priority-grid > * {
+  min-width: 0;
+}
+
 label,
 legend {
   font-size: 14px;
@@ -80,6 +109,7 @@ input,
 textarea,
 select {
   width: 100%;
+  max-width: 100%;
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid #cfd6e3;
@@ -179,6 +209,11 @@ button:disabled {
   align-items: center;
   gap: 8px;
   font-weight: 500;
+  min-width: 0;
+}
+
+.priority-item span {
+  overflow-wrap: anywhere;
 }
 
 .priority-item input {
@@ -255,6 +290,7 @@ button:disabled {
 
   .card {
     padding: 16px;
+    border-radius: 12px;
   }
 
   .header-section {
@@ -262,8 +298,31 @@ button:disabled {
     align-items: stretch;
   }
 
+  .top-nav {
+    gap: 6px;
+  }
+
+  .top-nav a {
+    padding: 4px 6px;
+  }
+
   .field-grid,
   .priority-grid {
     grid-template-columns: 1fr;
+  }
+
+  .progress-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 420px) {
+  .card {
+    padding: 14px;
+  }
+
+  button {
+    width: 100%;
   }
 }
