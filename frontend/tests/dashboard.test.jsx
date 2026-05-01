@@ -62,7 +62,7 @@ describe("dashboard: пользовательский флоу", () => {
     api.generatePlan.mockResolvedValue({
       plan_id: 7,
       plan: {
-        weeks: [{ week: 1, topics: ["Python", "SQL"] }],
+        weeks: [{ week: 1, themes: ["Python", "SQL"] }],
       },
     });
 
