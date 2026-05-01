@@ -4,14 +4,17 @@ from fastapi import HTTPException
 from app.services import vacancy_ingest as svc
 
 
-def test_normalize_text_empty_and_too_long():
-    with pytest.raises(HTTPException) as empty:
-        svc.normalize_text("   \n  ")
-    assert empty.value.status_code == 400
-
-    with pytest.raises(HTTPException) as long_text:
-        svc.normalize_text("x" * (svc.MAX_VACANCY_TEXT_LENGTH + 1))
-    assert long_text.value.status_code == 413
+@pytest.mark.parametrize(
+    ("text", "expected_status"),
+    [
+        ("   \n  ", 400),
+        ("x" * (svc.MAX_VACANCY_TEXT_LENGTH + 1), 413),
+    ],
+)
+def test_normalize_text_invalid(text, expected_status):
+    with pytest.raises(HTTPException) as err:
+        svc.normalize_text(text)
+    assert err.value.status_code == expected_status
 
 
 def test_extract_text_from_html_without_trafilatura(monkeypatch):
@@ -23,19 +26,21 @@ def test_extract_text_from_html_without_trafilatura(monkeypatch):
     assert "x" not in out
 
 
-def test_validate_url_scheme_host_and_resolve_errors(monkeypatch):
-    with pytest.raises(HTTPException) as scheme:
-        svc._validate_url_is_safe("ftp://example.com")
-    assert scheme.value.status_code == 422
+@pytest.mark.parametrize(
+    "url",
+    [
+        "ftp://example.com",
+        "https://localhost/path",
+    ],
+)
+def test_validate_url_scheme_and_host_errors(url):
+    with pytest.raises(HTTPException) as err:
+        svc._validate_url_is_safe(url)
+    assert err.value.status_code == 422
 
-    with pytest.raises(HTTPException) as host:
-        svc._validate_url_is_safe("https://localhost/path")
-    assert host.value.status_code == 422
 
-    def raise_os(*args, **kwargs):
-        raise OSError("dns fail")
-
-    monkeypatch.setattr(svc.socket, "getaddrinfo", raise_os)
+def test_validate_url_resolve_error(monkeypatch):
+    monkeypatch.setattr(svc.socket, "getaddrinfo", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("dns fail")))
     with pytest.raises(HTTPException) as dns:
         svc._validate_url_is_safe("https://example.com")
     assert dns.value.status_code == 422
@@ -49,17 +54,20 @@ def test_validate_url_rejects_forbidden_resolved_ip(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ingest_vacancy_http_error_status_and_non_html(monkeypatch):
-    class ResponseError:
-        status_code = 500
-        headers = {"content-type": "text/html"}
-        text = "<html>err</html>"
-
-    class ResponseJson:
-        status_code = 200
-        headers = {"content-type": "application/json"}
-        text = "{}"
-
+@pytest.mark.parametrize(
+    ("response", "expected_status"),
+    [
+        (
+            type("ResponseError", (), {"status_code": 500, "headers": {"content-type": "text/html"}, "text": "<html>err</html>"})(),
+            502,
+        ),
+        (
+            type("ResponseJson", (), {"status_code": 200, "headers": {"content-type": "application/json"}, "text": "{}"})(),
+            415,
+        ),
+    ],
+)
+async def test_ingest_vacancy_response_validation(monkeypatch, response, expected_status):
     class Client:
         def __init__(self, response):
             self.response = response
@@ -74,16 +82,11 @@ async def test_ingest_vacancy_http_error_status_and_non_html(monkeypatch):
             return self.response
 
     monkeypatch.setattr(svc, "_validate_url_is_safe", lambda url: None)
+    monkeypatch.setattr(svc.httpx, "AsyncClient", lambda **kwargs: Client(response))
 
-    monkeypatch.setattr(svc.httpx, "AsyncClient", lambda **kwargs: Client(ResponseError()))
-    with pytest.raises(HTTPException) as bad_status:
+    with pytest.raises(HTTPException) as err:
         await svc.ingest_vacancy("https://example.com", None)
-    assert bad_status.value.status_code == 502
-
-    monkeypatch.setattr(svc.httpx, "AsyncClient", lambda **kwargs: Client(ResponseJson()))
-    with pytest.raises(HTTPException) as non_html:
-        await svc.ingest_vacancy("https://example.com", None)
-    assert non_html.value.status_code == 415
+    assert err.value.status_code == expected_status
 
 
 @pytest.mark.asyncio
