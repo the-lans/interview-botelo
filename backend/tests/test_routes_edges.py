@@ -25,26 +25,48 @@ async def _signup_verify_login(client, email: str = "edge@test.com", password: s
 
 
 @pytest.mark.asyncio
-async def test_signup_returns_503_when_email_delivery_fails(client, monkeypatch):
+@pytest.mark.parametrize(
+    ("endpoint", "payload", "precreate_user"),
+    [
+        ("/auth/signup", {"email": "fail-signup@test.com", "password": "pass1234"}, False),
+        ("/auth/resend-verification", {"email": "resend-fail@test.com"}, True),
+    ],
+)
+async def test_email_delivery_returns_503(client, monkeypatch, endpoint, payload, precreate_user):
     from app.api import routes
     from app.services.emailer import EmailDeliveryError
 
-    def fail(*args, **kwargs):
-        raise EmailDeliveryError("smtp down")
+    if precreate_user:
+        await client.post("/auth/signup", json={"email": payload["email"], "password": "pass1234"})
 
-    monkeypatch.setattr(routes, "send_email", fail)
+    monkeypatch.setattr(routes, "check_rate_limit", lambda key: True)
+    monkeypatch.setattr(
+        routes,
+        "send_email",
+        lambda *args, **kwargs: (_ for _ in ()).throw(EmailDeliveryError("smtp down")),
+    )
 
-    resp = await client.post("/auth/signup", json={"email": "fail-signup@test.com", "password": "pass1234"})
+    resp = await client.post(endpoint, json=payload)
     assert resp.status_code == 503
 
 
 @pytest.mark.asyncio
-async def test_login_returns_429_when_rate_limit_hits(client, monkeypatch):
+@pytest.mark.parametrize(
+    ("endpoint", "payload", "precreate_user"),
+    [
+        ("/auth/login", {"email": "x@test.com", "password": "pass1234"}, False),
+        ("/auth/resend-verification", {"email": "resend-rate@test.com"}, True),
+    ],
+)
+async def test_rate_limit_returns_429(client, monkeypatch, endpoint, payload, precreate_user):
     from app.api import routes
+
+    if precreate_user:
+        await client.post("/auth/signup", json={"email": payload["email"], "password": "pass1234"})
 
     monkeypatch.setattr(routes, "check_rate_limit", lambda key: False)
 
-    resp = await client.post("/auth/login", json={"email": "x@test.com", "password": "pass1234"})
+    resp = await client.post(endpoint, json=payload)
     assert resp.status_code == 429
 
 
@@ -66,23 +88,6 @@ async def test_verify_invalid_and_expired_token(client):
     expired = await client.get("/auth/verify", params={"token": "expired-token"})
     assert expired.status_code == 400
     assert expired.json()["detail"] == "Token expired"
-
-
-@pytest.mark.asyncio
-async def test_resend_verification_rate_limited_and_email_fail(client, monkeypatch):
-    from app.api import routes
-    from app.services.emailer import EmailDeliveryError
-
-    await client.post("/auth/signup", json={"email": "resend-fail@test.com", "password": "pass1234"})
-
-    monkeypatch.setattr(routes, "check_rate_limit", lambda key: False)
-    limited = await client.post("/auth/resend-verification", json={"email": "resend-fail@test.com"})
-    assert limited.status_code == 429
-
-    monkeypatch.setattr(routes, "check_rate_limit", lambda key: True)
-    monkeypatch.setattr(routes, "send_email", lambda *args, **kwargs: (_ for _ in ()).throw(EmailDeliveryError("smtp fail")))
-    failed = await client.post("/auth/resend-verification", json={"email": "resend-fail@test.com"})
-    assert failed.status_code == 503
 
 
 @pytest.mark.asyncio
