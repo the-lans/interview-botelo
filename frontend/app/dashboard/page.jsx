@@ -372,9 +372,9 @@ export default function DashboardPage() {
                 {planResult.plan.weeks.map((week, index) => (
                   <div key={week.week || index} className="plan-item">
                     <h3>Неделя {week.week || index + 1}</h3>
-                    {Array.isArray(week.topics) && week.topics.length > 0 ? (
+                    {Array.isArray(week.themes) && week.themes.length > 0 ? (
                       <ul>
-                        {week.topics.map((topic) => (
+                        {week.themes.map((topic) => (
                           <li key={topic}>{topic}</li>
                         ))}
                       </ul>
