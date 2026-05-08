@@ -1,57 +1,5 @@
-"use client";
-
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { signup } from "../../lib/api";
+import { redirect } from "next/navigation";
 
 export default function SignupPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    setStatus("");
-    setLoading(true);
-    try {
-      await signup({ email, password });
-      setStatus("Проверьте почту и подтвердите email, затем войдите.");
-    } catch (error) {
-      setStatus(error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <section className="card">
-      <h1>Регистрация</h1>
-      <form onSubmit={handleSubmit}>
-        <label className="field">
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-          />
-        </label>
-        <label className="field">
-          Пароль
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-          />
-        </label>
-        <button type="submit" disabled={loading}>
-          {loading ? "Отправляем..." : "Создать аккаунт"}
-        </button>
-      </form>
-      {status && <p><small>{status}</small></p>}
-    </section>
-  );
+  redirect("/login?mode=signup");
 }
