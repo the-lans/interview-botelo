@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { login, signup } from "../../lib/api";
 
-export default function LoginPage({ searchParams }) {
-  const initialMode = searchParams?.mode === "signup" ? "signup" : "login";
-  const [mode, setMode] = useState(initialMode);
+export default function LoginPage() {
+  const searchParams = useSearchParams();
+  const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
@@ -17,12 +17,9 @@ export default function LoginPage({ searchParams }) {
   const isLogin = useMemo(() => mode === "login", [mode]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const params = new URLSearchParams(window.location.search);
-    setVerified(params.get("verified") === "1");
-  }, []);
+    setMode(searchParams.get("mode") === "signup" ? "signup" : "login");
+    setVerified(searchParams.get("verified") === "1");
+  }, [searchParams]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
