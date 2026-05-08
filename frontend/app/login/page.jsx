@@ -1,18 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { login } from "../../lib/api";
+import { login, signup } from "../../lib/api";
 
-export default function LoginPage() {
+export default function LoginPage({ searchParams }) {
+  const initialMode = searchParams?.mode === "signup" ? "signup" : "login";
+  const [mode, setMode] = useState(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
   const [verified, setVerified] = useState(false);
+  const router = useRouter();
+
+  const isLogin = useMemo(() => mode === "login", [mode]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
     setVerified(params.get("verified") === "1");
   }, []);
@@ -21,10 +28,17 @@ export default function LoginPage() {
     event.preventDefault();
     setStatus("");
     setLoading(true);
+
     try {
-      await login({ email, password });
-      setStatus("Успешный вход");
-      router.push("/dashboard");
+      if (isLogin) {
+        await login({ email, password });
+        setStatus("Успешный вход");
+        router.push("/dashboard");
+      } else {
+        await signup({ email, password });
+        setStatus("Проверьте почту и подтвердите email, затем войдите.");
+        setMode("login");
+      }
     } catch (error) {
       if (error.status === 403) {
         setStatus("Подтвердите email, затем войдите.");
@@ -37,9 +51,41 @@ export default function LoginPage() {
   };
 
   return (
-    <section className="card">
-      <h1>Вход</h1>
-      {verified && <p><small>Email подтверждён. Теперь можно войти.</small></p>}
+    <section className="card auth-card">
+      <h1>{isLogin ? "Вход" : "Регистрация"}</h1>
+      <p className="muted">{isLogin ? "Войдите, чтобы продолжить подготовку." : "Создайте аккаунт и подтвердите email."}</p>
+
+      <div className="auth-switch" role="tablist" aria-label="Форма авторизации">
+        <button
+          type="button"
+          className={`auth-switch-button ${isLogin ? "active" : ""}`}
+          onClick={() => {
+            setMode("login");
+            setStatus("");
+          }}
+          aria-selected={isLogin}
+        >
+          Вход
+        </button>
+        <button
+          type="button"
+          className={`auth-switch-button ${!isLogin ? "active" : ""}`}
+          onClick={() => {
+            setMode("signup");
+            setStatus("");
+          }}
+          aria-selected={!isLogin}
+        >
+          Регистрация
+        </button>
+      </div>
+
+      {verified && isLogin && (
+        <p>
+          <small>Email подтверждён. Теперь можно войти.</small>
+        </p>
+      )}
+
       <form onSubmit={handleSubmit}>
         <label className="field">
           Email
@@ -60,10 +106,15 @@ export default function LoginPage() {
           />
         </label>
         <button type="submit" disabled={loading}>
-          {loading ? "Входим..." : "Войти"}
+          {loading ? (isLogin ? "Входим..." : "Создаём аккаунт...") : isLogin ? "Войти" : "Создать аккаунт"}
         </button>
       </form>
-      {status && <p><small>{status}</small></p>}
+
+      {status && (
+        <p>
+          <small>{status}</small>
+        </p>
+      )}
     </section>
   );
 }

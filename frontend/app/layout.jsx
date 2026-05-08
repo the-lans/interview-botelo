@@ -9,14 +9,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="ru">
       <body>
-        <main>
-          <nav className="top-nav" aria-label="Основная навигация">
-            <a href="/login">Login</a>
-            <a href="/signup">Signup</a>
-            <a href="/dashboard">Dashboard</a>
-          </nav>
-          {children}
-        </main>
+        <main>{children}</main>
       </body>
     </html>
   );
