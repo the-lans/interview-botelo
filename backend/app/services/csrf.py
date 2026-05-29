@@ -6,7 +6,6 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 EXEMPT_PATHS = {
     "/auth/login",
     "/auth/signup",
-    "/auth/logout",
     "/auth/resend-verification",
     "/auth/verify",
 }

@@ -81,11 +81,13 @@ describe("dashboard wizard", () => {
 
   it("делает logout и редиректит на auth-first экран", async () => {
     api.logout.mockResolvedValue({ detail: "ok" });
+    window.localStorage.setItem("dashboardDraftV1", JSON.stringify({ vacancyInput: "secret" }));
     render(<DashboardPage />);
 
     await userEvent.click(screen.getByRole("button", { name: "Выйти" }));
 
     await waitFor(() => expect(api.logout).toHaveBeenCalledTimes(1));
+    expect(window.localStorage.getItem("dashboardDraftV1")).toBeNull();
     expect(pushMock).toHaveBeenCalledWith("/");
   });
 
@@ -108,5 +110,34 @@ describe("dashboard wizard", () => {
     await userEvent.click(screen.getByRole("button", { name: "Далее" }));
     expect(screen.getByRole("heading", { name: "Шаг 2. Бриф подготовки" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Далее" })).toBeDisabled();
+  });
+
+  it("возвращает на вход при 401 во время обработки вакансии", async () => {
+    api.ingestVacancy.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    render(<DashboardPage />);
+
+    await userEvent.type(screen.getByLabelText("Входные данные вакансии"), "text vacancy");
+    await userEvent.click(screen.getByRole("button", { name: "Обработать вакансию" }));
+
+    expect(await screen.findByText("Сессия истекла. Войдите снова, чтобы продолжить.")).toBeInTheDocument();
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/?redirect=/dashboard"));
+  });
+
+  it("возвращает на вход при 401 во время генерации плана", async () => {
+    api.ingestVacancy.mockResolvedValue({ vacancy_text: "Python backend role" });
+    api.generatePlan.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    render(<DashboardPage />);
+
+    await userEvent.type(screen.getByLabelText("Входные данные вакансии"), "text vacancy");
+    await userEvent.click(screen.getByRole("button", { name: "Обработать вакансию" }));
+    await waitFor(() => expect(api.ingestVacancy).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByRole("button", { name: "Далее" }));
+    await userEvent.type(screen.getByLabelText("Целевая роль *"), "Backend Engineer");
+    await userEvent.click(screen.getByRole("button", { name: "Далее" }));
+    await userEvent.click(screen.getByRole("button", { name: "Сгенерировать план" }));
+
+    expect(await screen.findByText("Сессия истекла. Войдите снова, чтобы продолжить.")).toBeInTheDocument();
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/?redirect=/dashboard"));
   });
 });

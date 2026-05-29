@@ -117,3 +117,25 @@ async def test_resend_verification_behaviour(
             assert user.email_verification_token != old_token_hash
         else:
             assert user.email_verification_token is None
+
+
+@pytest.mark.asyncio
+async def test_logout_requires_csrf_token_after_login(client):
+    from app.db.session import SessionLocal
+
+    await client.post("/auth/signup", json={"email": "logout-csrf@test.com", "password": "pass1234"})
+
+    plain_token = "logout-csrf-token"
+    async with SessionLocal() as session:
+        res = await session.execute(select(User).where(User.email == "logout-csrf@test.com"))
+        user = res.scalar_one()
+        user.email_verification_token = hash_email_token(plain_token)
+        await session.commit()
+
+    await client.get(f"/auth/verify?token={plain_token}")
+    login = await client.post("/auth/login", json={"email": "logout-csrf@test.com", "password": "pass1234"})
+    assert login.status_code == 200
+
+    logout = await client.post("/auth/logout")
+    assert logout.status_code == 403
+    assert logout.json()["detail"] == "CSRF token missing/invalid"

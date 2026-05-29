@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 
+import { sanitizeRedirectTarget } from "../../lib/auth-guards";
+
 export default function LoginPage({ searchParams }) {
   const nextSearchParams = new URLSearchParams();
 
@@ -11,8 +13,9 @@ export default function LoginPage({ searchParams }) {
     nextSearchParams.set("verified", "1");
   }
 
-  if (typeof searchParams?.redirect === "string" && searchParams.redirect.startsWith("/")) {
-    nextSearchParams.set("redirect", searchParams.redirect);
+  const redirectTo = sanitizeRedirectTarget(searchParams?.redirect, "");
+  if (redirectTo) {
+    nextSearchParams.set("redirect", redirectTo);
   }
 
   const query = nextSearchParams.toString();
