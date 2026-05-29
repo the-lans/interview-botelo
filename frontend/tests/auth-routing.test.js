@@ -1,37 +1,51 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockUseSearchParams = vi.fn();
-
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(),
-  useSearchParams: mockUseSearchParams,
 }));
 
 describe("auth routing", () => {
   beforeEach(() => {
-    mockUseSearchParams.mockReset();
+    vi.clearAllMocks();
   });
 
-  it("signup page редиректит на /login?mode=signup", async () => {
+  it("signup page редиректит на /?mode=signup", async () => {
     const { default: SignupPage } = await import("../app/signup/page");
     const { redirect } = await import("next/navigation");
 
     SignupPage();
 
-    expect(redirect).toHaveBeenCalledWith("/login?mode=signup");
+    expect(redirect).toHaveBeenCalledWith("/?mode=signup");
   });
 
-  it("login page прокидывает mode и verified в LoginForm", async () => {
-    mockUseSearchParams.mockReturnValue({
-      get: (key) => ({ mode: "signup", verified: "1" }[key] ?? null),
+  it("login page редиректит на корень с query-параметрами", async () => {
+    const { default: LoginPage } = await import("../app/login/page");
+    const { redirect } = await import("next/navigation");
+
+    LoginPage({
+      searchParams: {
+        mode: "signup",
+        verified: "1",
+        redirect: "/dashboard",
+      },
     });
 
-    const { default: LoginPage } = await import("../app/login/page");
+    expect(redirect).toHaveBeenCalledWith("/?mode=signup&verified=1&redirect=%2Fdashboard");
+  });
 
-    const element = LoginPage();
+  it("home page рендерит LoginForm с безопасным redirectTo", async () => {
+    const { default: Home } = await import("../app/page");
+
+    const element = Home({
+      searchParams: {
+        mode: "signup",
+        verified: "1",
+        redirect: "/dashboard",
+      },
+    });
 
     expect(element.props).toEqual(
-      expect.objectContaining({ initialMode: "signup", verified: true })
+      expect.objectContaining({ initialMode: "signup", redirectTo: "/dashboard", verified: true })
     );
   });
 });

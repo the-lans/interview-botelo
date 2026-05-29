@@ -10,7 +10,7 @@ export function middleware(request) {
     return NextResponse.next();
   }
 
-  const loginUrl = new URL("/login", request.url);
+  const loginUrl = new URL("/", request.url);
   loginUrl.searchParams.set("redirect", request.nextUrl.pathname);
   return NextResponse.redirect(loginUrl);
 }

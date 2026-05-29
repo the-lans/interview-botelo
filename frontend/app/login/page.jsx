@@ -1,14 +1,20 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import React from "react";
-import { useSearchParams } from "next/navigation";
+export default function LoginPage({ searchParams }) {
+  const nextSearchParams = new URLSearchParams();
 
-import LoginForm from "./LoginForm";
+  if (searchParams?.mode === "signup") {
+    nextSearchParams.set("mode", "signup");
+  }
 
-export default function LoginPage() {
-  const searchParams = useSearchParams();
-  const mode = searchParams?.get("mode") === "signup" ? "signup" : "login";
-  const verified = searchParams?.get("verified") === "1";
+  if (searchParams?.verified === "1") {
+    nextSearchParams.set("verified", "1");
+  }
 
-  return <LoginForm initialMode={mode} verified={verified} />;
+  if (typeof searchParams?.redirect === "string" && searchParams.redirect.startsWith("/")) {
+    nextSearchParams.set("redirect", searchParams.redirect);
+  }
+
+  const query = nextSearchParams.toString();
+  redirect(query ? `/?${query}` : "/");
 }

@@ -10,13 +10,14 @@ import DashboardPage from "../app/dashboard/page";
 import * as api from "../lib/api";
 
 const pushMock = vi.fn();
+const replaceMock = vi.fn();
 
 afterEach(() => {
   cleanup();
 });
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, replace: replaceMock }),
 }));
 
 vi.mock("../lib/api", () => ({
@@ -78,13 +79,34 @@ describe("dashboard wizard", () => {
     expect(screen.getByText("Неделя 1")).toBeInTheDocument();
   });
 
-  it("делает logout и редиректит на login", async () => {
+  it("делает logout и редиректит на auth-first экран", async () => {
     api.logout.mockResolvedValue({ detail: "ok" });
     render(<DashboardPage />);
 
     await userEvent.click(screen.getByRole("button", { name: "Выйти" }));
 
     await waitFor(() => expect(api.logout).toHaveBeenCalledTimes(1));
-    expect(pushMock).toHaveBeenCalledWith("/login");
+    expect(pushMock).toHaveBeenCalledWith("/");
+  });
+
+  it("редиректит на auth-first экран при 401 от progress", async () => {
+    api.fetchProgress.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    render(<DashboardPage />);
+
+    expect(await screen.findByText("Нужно войти, чтобы увидеть прогресс.")).toBeInTheDocument();
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/?redirect=/dashboard"));
+  });
+
+  it("блокирует переход к генерации без целевой роли", async () => {
+    api.ingestVacancy.mockResolvedValue({ vacancy_text: "Python backend role" });
+    render(<DashboardPage />);
+
+    await userEvent.type(screen.getByLabelText("Входные данные вакансии"), "text vacancy");
+    await userEvent.click(screen.getByRole("button", { name: "Обработать вакансию" }));
+    await waitFor(() => expect(api.ingestVacancy).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByRole("button", { name: "Далее" }));
+    expect(screen.getByRole("heading", { name: "Шаг 2. Бриф подготовки" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Далее" })).toBeDisabled();
   });
 });

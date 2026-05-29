@@ -54,6 +54,17 @@ describe("auth flow", () => {
     expect(pushMock).toHaveBeenCalledWith("/dashboard");
   });
 
+  it("возвращает пользователя на целевой маршрут после логина", async () => {
+    api.login.mockResolvedValue({ detail: "ok" });
+    render(<LoginForm initialMode="login" redirectTo="/dashboard" />);
+
+    await userEvent.type(screen.getByLabelText("Email"), "user@test.com");
+    await userEvent.type(screen.getByLabelText("Пароль"), "secret");
+    await userEvent.click(screen.getByRole("button", { name: "Войти" }));
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));
+  });
+
   it("регистрирует и возвращает в режим входа", async () => {
     api.signup.mockResolvedValue({ detail: "ok" });
     render(<LoginForm initialMode="signup" />);
@@ -64,5 +75,12 @@ describe("auth flow", () => {
 
     await waitFor(() => expect(api.signup).toHaveBeenCalledWith({ email: "new@test.com", password: "secret" }));
     expect(await screen.findByRole("heading", { name: "Вход" })).toBeInTheDocument();
+  });
+
+  it("показывает обзор сценария на auth-экране", () => {
+    render(<LoginForm initialMode="login" />);
+
+    expect(screen.getByText("Подготовка к интервью без хаоса")).toBeInTheDocument();
+    expect(screen.getByText("Один экран для входа и регистрации")).toBeInTheDocument();
   });
 });
