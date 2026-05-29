@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 
+import { isProbablyValidSessionCookie } from "./lib/auth-guards";
+
 export function middleware(request) {
   if (!request.nextUrl.pathname.startsWith("/dashboard")) {
     return NextResponse.next();
   }
 
   const session = request.cookies.get("session")?.value;
-  if (session) {
+  if (isProbablyValidSessionCookie(session)) {
     return NextResponse.next();
   }
 

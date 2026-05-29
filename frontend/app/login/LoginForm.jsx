@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login, signup } from "../../lib/api";
+import { sanitizeRedirectTarget } from "../../lib/auth-guards";
 
 export default function LoginForm({ initialMode = "login", redirectTo = "/dashboard", verified = false }) {
   const [mode, setMode] = useState(initialMode);
@@ -23,7 +24,7 @@ export default function LoginForm({ initialMode = "login", redirectTo = "/dashbo
       if (isLogin) {
         await login({ email, password });
         setStatus("Успешный вход");
-        router.push(redirectTo);
+        router.push(sanitizeRedirectTarget(redirectTo));
       } else {
         await signup({ email, password });
         setStatus("Проверьте почту и подтвердите email, затем войдите.");

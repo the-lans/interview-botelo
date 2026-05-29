@@ -108,6 +108,12 @@ export default function DashboardPage() {
     window.localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
   }, [vacancyMode, vacancyInput, vacancyText, resumeText, brief]);
 
+  const redirectToLogin = (message) => {
+    setNeedsLogin(true);
+    setStatus({ type: "info", message });
+    router.replace("/?redirect=/dashboard");
+  };
+
   useEffect(() => {
     let mounted = true;
     fetchProgress()
@@ -122,9 +128,7 @@ export default function DashboardPage() {
         }
 
         if (error.status === 401) {
-          setNeedsLogin(true);
-          setStatus({ type: "info", message: "Нужно войти, чтобы увидеть прогресс." });
-          router.replace("/?redirect=/dashboard");
+          redirectToLogin("Нужно войти, чтобы увидеть прогресс.");
           return;
         }
 
@@ -141,6 +145,9 @@ export default function DashboardPage() {
     setIsLogoutLoading(true);
     try {
       await logout();
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(DRAFT_KEY);
+      }
       setStatus({ type: "success", message: "Вы вышли из системы." });
       router.push("/");
     } catch (error) {
@@ -173,6 +180,10 @@ export default function DashboardPage() {
       setVacancyText(response.vacancy_text || "");
       setStatus({ type: "success", message: "Текст вакансии успешно обработан." });
     } catch (error) {
+      if (error.status === 401) {
+        redirectToLogin("Сессия истекла. Войдите снова, чтобы продолжить.");
+        return;
+      }
       setStatus({ type: "error", message: error.message || "Ошибка обработки вакансии." });
     } finally {
       setIsIngestLoading(false);
@@ -216,6 +227,10 @@ export default function DashboardPage() {
       setCurrentStep(3);
       setStatus({ type: "success", message: "План подготовки сгенерирован." });
     } catch (error) {
+      if (error.status === 401) {
+        redirectToLogin("Сессия истекла. Войдите снова, чтобы продолжить.");
+        return;
+      }
       setStatus({ type: "error", message: error.message || "Ошибка генерации плана." });
     } finally {
       setIsGenerateLoading(false);

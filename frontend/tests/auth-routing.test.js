@@ -48,4 +48,31 @@ describe("auth routing", () => {
       expect.objectContaining({ initialMode: "signup", redirectTo: "/dashboard", verified: true })
     );
   });
+
+  it("home page отбрасывает внешний redirect", async () => {
+    const { default: Home } = await import("../app/page");
+
+    const element = Home({
+      searchParams: {
+        redirect: "//evil.com",
+      },
+    });
+
+    expect(element.props).toEqual(
+      expect.objectContaining({ redirectTo: "/dashboard" })
+    );
+  });
+
+  it("login page не прокидывает небезопасный redirect", async () => {
+    const { default: LoginPage } = await import("../app/login/page");
+    const { redirect } = await import("next/navigation");
+
+    LoginPage({
+      searchParams: {
+        redirect: "//evil.com",
+      },
+    });
+
+    expect(redirect).toHaveBeenCalledWith("/");
+  });
 });
