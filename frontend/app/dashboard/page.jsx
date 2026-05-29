@@ -124,6 +124,7 @@ export default function DashboardPage() {
         if (error.status === 401) {
           setNeedsLogin(true);
           setStatus({ type: "info", message: "Нужно войти, чтобы увидеть прогресс." });
+          router.replace("/?redirect=/dashboard");
           return;
         }
 
@@ -141,7 +142,7 @@ export default function DashboardPage() {
     try {
       await logout();
       setStatus({ type: "success", message: "Вы вышли из системы." });
-      router.push("/login");
+      router.push("/");
     } catch (error) {
       setStatus({ type: "error", message: error.message || "Не удалось выйти из системы." });
     } finally {
@@ -283,7 +284,7 @@ export default function DashboardPage() {
 
       {needsLogin && (
         <div className="card section">
-          <a href="/login">Перейти к входу</a>
+          <a href="/?redirect=/dashboard">Перейти к входу</a>
         </div>
       )}
 
