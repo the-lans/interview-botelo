@@ -68,6 +68,29 @@ async def on_startup():
         try:
             await conn.execute(
                 text(
+                    "ALTER TABLE interview_sessions "
+                    "ADD COLUMN IF NOT EXISTS total_questions INTEGER DEFAULT 1"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE interview_sessions ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text("ALTER TABLE interview_answers ADD COLUMN IF NOT EXISTS question_id INTEGER")
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
                     "ALTER TABLE users "
                     "ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE"
                 )

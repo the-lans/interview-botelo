@@ -1,18 +1,18 @@
 from __future__ import annotations
 
+import secrets
+import subprocess
 from datetime import datetime, timedelta
 from io import BytesIO
 from tempfile import NamedTemporaryFile
-import secrets
-import subprocess
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
-from fastapi.responses import RedirectResponse
-from sqlalchemy import select, func, String
-from sqlalchemy.ext.asyncio import AsyncSession
-from striprtf.striprtf import rtf_to_text
 from docx import Document
 from docx.opc.exceptions import PackageNotFoundError
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi.responses import RedirectResponse
+from sqlalchemy import String, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from striprtf.striprtf import rtf_to_text
 
 from app.api.schemas import (
     GeneratedPlanOut,
@@ -33,14 +33,24 @@ from app.db.session import get_db
 from app.models import InterviewAnswer, InterviewSession, Plan, Progress, Question, Resume, User
 from app.services.ai_proxy import chat_completion
 from app.services.auth import get_current_user
-from app.services.rate_limit import check_rate_limit
 from app.services.emailer import EmailDeliveryError, send_email
-from app.services.security import create_access_token, hash_email_token, hash_password, verify_password
-from app.services.vacancy_ingest import ingest_vacancy, normalize_text, MAX_VACANCY_TEXT_LENGTH
+from app.services.rate_limit import check_rate_limit
+from app.services.security import (
+    create_access_token,
+    hash_email_token,
+    hash_password,
+    verify_password,
+)
+from app.services.vacancy_ingest import (
+    MAX_VACANCY_TEXT_LENGTH,
+    ingest_vacancy,
+    normalize_text,
+)
 
 router = APIRouter()
 
 MAX_RESUME_FILE_SIZE_BYTES = 5 * 1024 * 1024
+MAX_INTERVIEW_QUESTIONS = 3
 RESUME_ALLOWED_TYPES = {
     ".md": {"text/markdown", "text/plain"},
     ".txt": {"text/plain"},
@@ -50,6 +60,60 @@ RESUME_ALLOWED_TYPES = {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     },
 }
+
+
+def _tokenize_text(value: str) -> set[str]:
+    cleaned = "".join(char.lower() if char.isalnum() else " " for char in value)
+    return {token for token in cleaned.split() if len(token) >= 3}
+
+
+def _score_interview_answer(question: Question, answer: str) -> float:
+    answer_tokens = _tokenize_text(answer)
+    answer_word_count = len(answer.split())
+    if answer_word_count == 0:
+        return 0.0
+
+    reference_tokens = _tokenize_text(question.text)
+    reference_tokens.update(_tokenize_text(question.tags))
+    if question.sample_answer:
+        reference_tokens.update(_tokenize_text(question.sample_answer))
+
+    overlap = len(answer_tokens & reference_tokens)
+    overlap_score = min(35.0, overlap * 8.0)
+
+    depth_score = min(45.0, answer_word_count * 2.5)
+    structure_score = 20.0 if any(mark in answer for mark in (".", ",", ";", ":")) else 10.0
+
+    raw_score = overlap_score + depth_score + structure_score
+    return round(min(100.0, raw_score), 2)
+
+
+def _build_interview_summary(scores: list[float]) -> str:
+    average_score = sum(scores) / len(scores)
+    rounded_score = round(average_score, 2)
+
+    if rounded_score >= 80:
+        verdict = "Сильный результат: ответы в целом полные и по делу."
+    elif rounded_score >= 60:
+        verdict = "Нормальный результат: база есть, но глубину стоит усилить."
+    else:
+        verdict = "Есть заметные пробелы: ответы пока слишком короткие или поверхностные."
+
+    if rounded_score >= 75:
+        next_step = (
+            "Следующий шаг: потренировать более чёткую структуру ответа под реальные интервью."
+        )
+    elif rounded_score >= 50:
+        next_step = (
+            "Следующий шаг: добавить больше конкретики, терминов и причинно-следственных связей."
+        )
+    else:
+        next_step = (
+            "Следующий шаг: повторить теорию по темам интервью "
+            "и отработать развёрнутые ответы вслух."
+        )
+
+    return f"{verdict} Итоговый балл: {rounded_score}/100. {next_step}"
 
 
 @router.post("/auth/signup", response_model=MessageOut)
@@ -87,7 +151,9 @@ async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/auth/login", response_model=MessageOut)
-async def login(request: Request, response: Response, data: LoginIn, db: AsyncSession = Depends(get_db)):
+async def login(
+    request: Request, response: Response, data: LoginIn, db: AsyncSession = Depends(get_db)
+):
     ip = request.client.host if request.client else "unknown"
     rate_limit_key = f"login:{ip}:{data.email.lower()}"
     if not check_rate_limit(rate_limit_key):
@@ -121,7 +187,10 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
     user = res.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=400, detail="Invalid token")
-    if user.email_verification_expires_at and user.email_verification_expires_at < datetime.utcnow():
+    if (
+        user.email_verification_expires_at
+        and user.email_verification_expires_at < datetime.utcnow()
+    ):
         raise HTTPException(status_code=400, detail="Token expired")
 
     user.email_verified = True
@@ -275,7 +344,8 @@ async def generate_plan(
 
     prompt = (
         "Generate strict JSON only with keys: summary, gap_analysis, weeks, final_readiness_check. "
-        "weeks is an array where each item has week, themes, practice, mock_interview, expected_outcome, time_budget_hours."
+        "weeks is an array where each item has week, themes, practice, "
+        "mock_interview, expected_outcome, time_budget_hours."
     )
     messages = [
         {"role": "system", "content": "You are an interview coach."},
@@ -364,12 +434,22 @@ async def get_questions(
 async def interview_start(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
+    total_questions_res = await db.execute(select(func.count(Question.id)))
+    total_questions_in_db = total_questions_res.scalar_one()
+    if total_questions_in_db == 0:
+        raise HTTPException(status_code=400, detail="No questions in database")
+
     res = await db.execute(select(Question).order_by(func.random()).limit(1))
     question = res.scalar_one_or_none()
     if not question:
         raise HTTPException(status_code=400, detail="No questions in database")
 
-    session = InterviewSession(user_id=user.id, question_id=question.id, started_at=datetime.utcnow())
+    session = InterviewSession(
+        user_id=user.id,
+        question_id=question.id,
+        total_questions=min(MAX_INTERVIEW_QUESTIONS, total_questions_in_db),
+        started_at=datetime.utcnow(),
+    )
     db.add(session)
     await db.commit()
     await db.refresh(session)
@@ -383,6 +463,10 @@ async def interview_answer(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    normalized_answer = data.answer.strip()
+    if not normalized_answer:
+        raise HTTPException(status_code=422, detail="Answer must not be empty")
+
     res = await db.execute(
         select(InterviewSession).where(
             InterviewSession.id == data.session_id,
@@ -392,6 +476,9 @@ async def interview_answer(
     session = res.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    if session.completed_at is not None:
+        raise HTTPException(status_code=400, detail="Session already completed")
 
     if not session.question_id or session.question_id != data.question_id:
         raise HTTPException(status_code=400, detail="Question mismatch")
@@ -411,24 +498,77 @@ async def interview_answer(
     except Exception:
         raise HTTPException(status_code=502, detail="Feedback unavailable")
 
+    answer_score = _score_interview_answer(question, normalized_answer)
     answer = InterviewAnswer(
         session_id=session.id,
+        question_id=question.id,
         question=question.text,
-        answer=data.answer,
+        answer=normalized_answer,
         feedback=feedback,
-        score=None,
+        score=answer_score,
     )
     db.add(answer)
+    await db.flush()
+
+    answered_question_ids_res = await db.execute(
+        select(InterviewAnswer.question_id).where(InterviewAnswer.session_id == session.id)
+    )
+    answered_question_ids = [
+        question_id for question_id in answered_question_ids_res.scalars().all()
+    ]
+    answered_count = len(answered_question_ids)
+
+    if answered_count >= session.total_questions:
+        all_scores_res = await db.execute(
+            select(InterviewAnswer.score).where(InterviewAnswer.session_id == session.id)
+        )
+        scores = [float(score) for score in all_scores_res.scalars().all() if score is not None]
+        session_score = round(sum(scores) / len(scores), 2) if scores else round(answer_score, 2)
+        session.question_id = None
+        session.completed_at = datetime.utcnow()
+        session.score = session_score
+        await db.commit()
+        return {
+            "feedback": feedback,
+            "score": answer_score,
+            "completed": True,
+            "session_score": session_score,
+            "summary": _build_interview_summary(scores or [answer_score]),
+            "next_question_id": None,
+            "next_question": None,
+        }
 
     next_q_res = await db.execute(
-        select(Question).where(Question.id != question.id).order_by(func.random()).limit(1)
+        select(Question)
+        .where(Question.id.not_in(answered_question_ids))
+        .order_by(func.random())
+        .limit(1)
     )
     next_q = next_q_res.scalar_one_or_none()
-    session.question_id = next_q.id if next_q else None
+    if not next_q:
+        session.question_id = None
+        session.completed_at = datetime.utcnow()
+        session.score = answer_score
+        await db.commit()
+        return {
+            "feedback": feedback,
+            "score": answer_score,
+            "completed": True,
+            "session_score": answer_score,
+            "summary": _build_interview_summary([answer_score]),
+            "next_question_id": None,
+            "next_question": None,
+        }
+
+    session.question_id = next_q.id
     await db.commit()
 
     return {
         "feedback": feedback,
+        "score": answer_score,
+        "completed": False,
+        "session_score": None,
+        "summary": None,
         "next_question_id": next_q.id if next_q else None,
         "next_question": next_q.text if next_q else None,
     }
