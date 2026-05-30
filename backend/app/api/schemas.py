@@ -90,10 +90,14 @@ class InterviewStartOut(BaseModel):
 class InterviewAnswerIn(BaseModel):
     session_id: int
     question_id: int
-    answer: str
+    answer: str = Field(min_length=1, max_length=5000)
 
 
 class InterviewAnswerOut(BaseModel):
     feedback: str
+    score: float = Field(ge=0, le=100)
+    completed: bool
+    session_score: float | None = Field(default=None, ge=0, le=100)
+    summary: str | None = None
     next_question_id: int | None = None
     next_question: str | None = None
