@@ -546,16 +546,21 @@ async def interview_answer(
     )
     next_q = next_q_res.scalar_one_or_none()
     if not next_q:
+        all_scores_res = await db.execute(
+            select(InterviewAnswer.score).where(InterviewAnswer.session_id == session.id)
+        )
+        scores = [float(score) for score in all_scores_res.scalars().all() if score is not None]
+        session_score = round(sum(scores) / len(scores), 2) if scores else round(answer_score, 2)
         session.question_id = None
         session.completed_at = datetime.utcnow()
-        session.score = answer_score
+        session.score = session_score
         await db.commit()
         return {
             "feedback": feedback,
             "score": answer_score,
             "completed": True,
-            "session_score": answer_score,
-            "summary": _build_interview_summary([answer_score]),
+            "session_score": session_score,
+            "summary": _build_interview_summary(scores or [answer_score]),
             "next_question_id": None,
             "next_question": None,
         }

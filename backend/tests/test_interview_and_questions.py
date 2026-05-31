@@ -299,3 +299,75 @@ async def test_interview_cannot_answer_completed_session(client, monkeypatch):
     )
     assert completed_response.status_code == 400
     assert completed_response.json()["detail"] == "Session already completed"
+
+
+@pytest.mark.asyncio
+async def test_interview_uses_average_score_when_question_pool_shrinks(client, monkeypatch):
+    from app.db.session import SessionLocal
+
+    await _auth(client, email="shrink@test.com")
+    await _seed_questions()
+
+    async def fake_chat_completion(messages, model="openclaw/devius"):
+        return {"choices": [{"message": {"content": "good answer"}}]}
+
+    monkeypatch.setattr("app.api.routes.chat_completion", fake_chat_completion)
+
+    start = await client.post("/interview/start")
+    start_payload = start.json()
+
+    first_answer = await client.post(
+        "/interview/answer",
+        json={
+            "session_id": start_payload["session_id"],
+            "question_id": start_payload["question_id"],
+            "answer": "Короткий ответ.",
+        },
+    )
+    assert first_answer.status_code == 200
+    first_payload = first_answer.json()
+
+    async with SessionLocal() as session:
+        remaining_question_ids = (
+            (
+                await session.execute(
+                    select(Question.id).where(
+                        Question.id.not_in(
+                            [start_payload["question_id"], first_payload["next_question_id"]]
+                        )
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(remaining_question_ids) == 1
+        await session.execute(
+            Question.__table__.delete().where(Question.id == remaining_question_ids[0])
+        )
+        await session.commit()
+
+    second_answer = await client.post(
+        "/interview/answer",
+        json={
+            "session_id": start_payload["session_id"],
+            "question_id": first_payload["next_question_id"],
+            "answer": "Очень подробный ответ с архитектурой, SQL, trade-offs и примерами.",
+        },
+    )
+    assert second_answer.status_code == 200
+    closing_payload = second_answer.json()
+    assert closing_payload["completed"] is True
+
+    async with SessionLocal() as session:
+        answer_scores = (
+            await session.execute(
+                select(InterviewAnswer.score).where(
+                    InterviewAnswer.session_id == start_payload["session_id"]
+                )
+            )
+        ).scalars().all()
+    expected_session_score = round(
+        sum(float(score) for score in answer_scores if score is not None) / len(answer_scores), 2
+    )
+    assert closing_payload["session_score"] == expected_session_score
