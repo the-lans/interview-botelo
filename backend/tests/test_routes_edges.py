@@ -126,3 +126,18 @@ async def test_interview_answer_returns_502_on_ai_error(client, monkeypatch):
 async def test_progress_requires_auth(client):
     resp = await client.get("/progress")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"topic": "   ", "status": "todo"},
+        {"topic": "Python", "status": "paused"},
+    ],
+)
+async def test_progress_rejects_invalid_payload(client, payload):
+    await _signup_verify_login(client, email="edge-progress@test.com")
+
+    resp = await client.post("/progress", json=payload)
+    assert resp.status_code == 422

@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 class SignupIn(BaseModel):
@@ -101,3 +102,52 @@ class InterviewAnswerOut(BaseModel):
     summary: str | None = None
     next_question_id: int | None = None
     next_question: str | None = None
+
+
+class ProgressUpsertIn(BaseModel):
+    topic: str = Field(min_length=1, max_length=120)
+    status: Literal["todo", "in_progress", "done"]
+
+    @field_validator("topic")
+    @classmethod
+    def validate_topic(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("Topic must not be empty")
+        return normalized
+
+
+class ProgressTopicOut(BaseModel):
+    topic: str
+    status: Literal["todo", "in_progress", "done"]
+    updated_at: datetime | None = None
+
+
+class ProgressHistoryOut(BaseModel):
+    topic: str
+    status: Literal["todo", "in_progress", "done"]
+    updated_at: datetime
+
+
+class ProgressStatusCountsOut(BaseModel):
+    todo: int = Field(ge=0)
+    in_progress: int = Field(ge=0)
+    done: int = Field(ge=0)
+
+
+class ProgressSummaryOut(BaseModel):
+    total_topics: int = Field(ge=0)
+    completed_topics: int = Field(ge=0)
+    completion_percent: float = Field(ge=0, le=100)
+    status_counts: ProgressStatusCountsOut
+
+
+class ProgressOut(BaseModel):
+    summary: ProgressSummaryOut
+    topics: list[ProgressTopicOut]
+    history: list[ProgressHistoryOut]
+
+
+class ProgressUpsertOut(BaseModel):
+    detail: Literal["created", "updated", "unchanged"]
+    topic: ProgressTopicOut

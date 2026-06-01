@@ -1,7 +1,9 @@
+import json
+
 import pytest
 from sqlalchemy import select
 
-from app.models import Progress, User
+from app.models import Plan, Progress, User
 from app.services.security import hash_email_token
 
 
@@ -65,7 +67,23 @@ async def test_e2e_core_flow(client, monkeypatch):
             "choices": [
                 {
                     "message": {
-                        "content": '{"summary":"plan","gap_analysis":[],"weeks":[{"week":1,"themes":["Python"],"practice":["API"],"mock_interview":[],"expected_outcome":"ok","time_budget_hours":6}],"final_readiness_check":["done"]}'
+                        "content": json.dumps(
+                            {
+                                "summary": "plan",
+                                "gap_analysis": [],
+                                "weeks": [
+                                    {
+                                        "week": 1,
+                                        "themes": ["Python"],
+                                        "practice": ["API"],
+                                        "mock_interview": [],
+                                        "expected_outcome": "ok",
+                                        "time_budget_hours": 6,
+                                    }
+                                ],
+                                "final_readiness_check": ["done"],
+                            }
+                        )
                     }
                 }
             ]
@@ -114,14 +132,36 @@ async def test_e2e_core_flow(client, monkeypatch):
     )
     assert answer.status_code == 200
 
-    async with SessionLocal() as session:
-        user = (await session.execute(select(User).where(User.email == "e2e-core@test.com"))).scalar_one()
-        session.add(Progress(user_id=user.id, topic="python", status="in_progress"))
-        await session.commit()
+    progress_update = await client.post(
+        "/progress",
+        json={"topic": "Python", "status": "in_progress"},
+    )
+    assert progress_update.status_code == 200
+    assert progress_update.json()["detail"] == "created"
 
     progress = await client.get("/progress")
     assert progress.status_code == 200
-    assert len(progress.json()) == 1
+    progress_payload = progress.json()
+    assert progress_payload["summary"] == {
+        "total_topics": 1,
+        "completed_topics": 0,
+        "completion_percent": 0.0,
+        "status_counts": {"todo": 0, "in_progress": 1, "done": 0},
+    }
+    assert progress_payload["topics"] == [
+        {
+            "topic": "Python",
+            "status": "in_progress",
+            "updated_at": progress_payload["topics"][0]["updated_at"],
+        }
+    ]
+    assert progress_payload["history"] == [
+        {
+            "topic": "Python",
+            "status": "in_progress",
+            "updated_at": progress_payload["history"][0]["updated_at"],
+        }
+    ]
 
     logout = await client.post("/auth/logout")
     assert logout.status_code == 200
@@ -192,3 +232,107 @@ async def test_routes_error_scenarios_extra(client, monkeypatch):
         },
     )
     assert bad_plan.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_progress_aggregates_plan_topics_and_history(client):
+    from app.db.session import SessionLocal
+
+    email = "progress-plan@test.com"
+    await _register_and_login(client, email)
+
+    async with SessionLocal() as session:
+        user = (await session.execute(select(User).where(User.email == email))).scalar_one()
+        session.add(
+            Plan(
+                user_id=user.id,
+                resume_text="resume",
+                vacancy_text="vacancy",
+                brief_json="{}",
+                plan_json=json.dumps(
+                    {
+                        "summary": "plan",
+                        "gap_analysis": [],
+                        "weeks": [
+                            {
+                                "week": 1,
+                                "themes": ["Python", "SQL"],
+                                "practice": [],
+                                "mock_interview": [],
+                                "expected_outcome": "ok",
+                                "time_budget_hours": 4,
+                            },
+                            {
+                                "week": 2,
+                                "themes": ["System Design", "Python"],
+                                "practice": [],
+                                "mock_interview": [],
+                                "expected_outcome": "ok",
+                                "time_budget_hours": 4,
+                            },
+                        ],
+                        "final_readiness_check": [],
+                    }
+                ),
+                content="{}",
+            )
+        )
+        session.add_all(
+            [
+                Progress(user_id=user.id, topic="Python", status="todo"),
+                Progress(user_id=user.id, topic="Python", status="done"),
+                Progress(user_id=user.id, topic="Algorithms", status="in_progress"),
+            ]
+        )
+        await session.commit()
+
+    resp = await client.get("/progress")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["summary"] == {
+        "total_topics": 4,
+        "completed_topics": 1,
+        "completion_percent": 25.0,
+        "status_counts": {"todo": 2, "in_progress": 1, "done": 1},
+    }
+    assert body["topics"] == [
+        {"topic": "Python", "status": "done", "updated_at": body["topics"][0]["updated_at"]},
+        {"topic": "SQL", "status": "todo", "updated_at": None},
+        {
+            "topic": "System Design",
+            "status": "todo",
+            "updated_at": None,
+        },
+        {
+            "topic": "Algorithms",
+            "status": "in_progress",
+            "updated_at": body["topics"][3]["updated_at"],
+        },
+    ]
+    assert [(entry["topic"], entry["status"]) for entry in body["history"]] == [
+        ("Algorithms", "in_progress"),
+        ("Python", "done"),
+        ("Python", "todo"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_progress_upsert_returns_unchanged_when_status_matches_latest(client):
+    from app.db.session import SessionLocal
+
+    email = "progress-unchanged@test.com"
+    await _register_and_login(client, email)
+
+    async with SessionLocal() as session:
+        user = (await session.execute(select(User).where(User.email == email))).scalar_one()
+        session.add(Progress(user_id=user.id, topic="Python", status="done"))
+        await session.commit()
+
+    unchanged = await client.post("/progress", json={"topic": "  python  ", "status": "done"})
+    assert unchanged.status_code == 200
+    assert unchanged.json()["detail"] == "unchanged"
+
+    history = await client.get("/progress")
+    assert history.status_code == 200
+    assert len(history.json()["history"]) == 1
