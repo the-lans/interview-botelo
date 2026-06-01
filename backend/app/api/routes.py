@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 import subprocess
 from datetime import datetime, timedelta
@@ -23,6 +24,9 @@ from app.api.schemas import (
     MessageOut,
     PlanGenerateOut,
     PlanIn,
+    ProgressOut,
+    ProgressUpsertIn,
+    ProgressUpsertOut,
     ResendVerificationIn,
     SignupIn,
     VacancyIngestIn,
@@ -51,6 +55,7 @@ router = APIRouter()
 
 MAX_RESUME_FILE_SIZE_BYTES = 5 * 1024 * 1024
 MAX_INTERVIEW_QUESTIONS = 3
+PROGRESS_STATUSES = ("todo", "in_progress", "done")
 RESUME_ALLOWED_TYPES = {
     ".md": {"text/markdown", "text/plain"},
     ".txt": {"text/plain"},
@@ -114,6 +119,108 @@ def _build_interview_summary(scores: list[float]) -> str:
         )
 
     return f"{verdict} Итоговый балл: {rounded_score}/100. {next_step}"
+
+
+def _normalize_progress_topic(value: str) -> str:
+    return " ".join(value.split()).casefold()
+
+
+def _extract_topics_from_plan(plan: Plan | None) -> list[str]:
+    if plan is None or not plan.plan_json:
+        return []
+
+    try:
+        payload = json.loads(plan.plan_json)
+    except json.JSONDecodeError:
+        return []
+
+    topics: list[str] = []
+    seen_keys: set[str] = set()
+    for week in payload.get("weeks", []):
+        week_themes = week.get("themes", [])
+        if not isinstance(week_themes, list):
+            continue
+
+        for theme in week_themes:
+            if not isinstance(theme, str):
+                continue
+            normalized = " ".join(theme.split())
+            if not normalized:
+                continue
+            normalized_key = _normalize_progress_topic(normalized)
+            if normalized_key in seen_keys:
+                continue
+            seen_keys.add(normalized_key)
+            topics.append(normalized)
+
+    return topics
+
+
+def _serialize_progress(
+    entries: list[Progress],
+    plan_topics: list[str],
+) -> dict[str, object]:
+    latest_by_topic: dict[str, Progress] = {}
+    ordered_topics: list[str] = []
+    seen_topics: set[str] = set()
+
+    for topic in plan_topics:
+        topic_key = _normalize_progress_topic(topic)
+        if topic_key in seen_topics:
+            continue
+        seen_topics.add(topic_key)
+        ordered_topics.append(topic)
+
+    for entry in entries:
+        topic_key = _normalize_progress_topic(entry.topic)
+        if topic_key not in latest_by_topic:
+            latest_by_topic[topic_key] = entry
+        if topic_key not in seen_topics:
+            seen_topics.add(topic_key)
+            ordered_topics.append(" ".join(entry.topic.split()))
+
+    topics: list[dict[str, object]] = []
+    status_counts = {status: 0 for status in PROGRESS_STATUSES}
+    completed_topics = 0
+
+    for topic in ordered_topics:
+        topic_key = _normalize_progress_topic(topic)
+        latest_entry = latest_by_topic.get(topic_key)
+        current_status = latest_entry.status if latest_entry else "todo"
+        if current_status in status_counts:
+            status_counts[current_status] += 1
+        if current_status == "done":
+            completed_topics += 1
+        topics.append(
+            {
+                "topic": latest_entry.topic if latest_entry else topic,
+                "status": current_status,
+                "updated_at": latest_entry.updated_at if latest_entry else None,
+            }
+        )
+
+    total_topics = len(topics)
+    completion_percent = round((completed_topics / total_topics) * 100, 2) if total_topics else 0.0
+
+    history = [
+        {
+            "topic": " ".join(entry.topic.split()),
+            "status": entry.status,
+            "updated_at": entry.updated_at,
+        }
+        for entry in entries
+    ]
+
+    return {
+        "summary": {
+            "total_topics": total_topics,
+            "completed_topics": completed_topics,
+            "completion_percent": completion_percent,
+            "status_counts": status_counts,
+        },
+        "topics": topics,
+        "history": history,
+    }
 
 
 @router.post("/auth/signup", response_model=MessageOut)
@@ -365,8 +472,6 @@ async def generate_plan(
     except Exception:
         raise HTTPException(status_code=502, detail="Plan generation failed")
 
-    import json
-
     try:
         plan_json = json.loads(content)
     except Exception:
@@ -579,14 +684,68 @@ async def interview_answer(
     }
 
 
-@router.get("/progress")
-async def get_progress(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Progress).where(Progress.user_id == user.id))
-    return [
-        {
-            "topic": p.topic,
-            "status": p.status,
-            "updated_at": p.updated_at,
+@router.post("/progress", response_model=ProgressUpsertOut)
+async def upsert_progress(
+    data: ProgressUpsertIn,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    normalized_topic = " ".join(data.topic.split())
+    topic_key = _normalize_progress_topic(normalized_topic)
+
+    latest_res = await db.execute(
+        select(Progress)
+        .where(Progress.user_id == user.id)
+        .order_by(Progress.updated_at.desc(), Progress.id.desc())
+    )
+    latest_entries = latest_res.scalars().all()
+    latest_entry = next(
+        (entry for entry in latest_entries if _normalize_progress_topic(entry.topic) == topic_key),
+        None,
+    )
+
+    if latest_entry and latest_entry.status == data.status:
+        return {
+            "detail": "unchanged",
+            "topic": {
+                "topic": latest_entry.topic,
+                "status": latest_entry.status,
+                "updated_at": latest_entry.updated_at,
+            },
         }
-        for p in res.scalars().all()
-    ]
+
+    progress_entry = Progress(
+        user_id=user.id,
+        topic=normalized_topic,
+        status=data.status,
+        updated_at=datetime.utcnow(),
+    )
+    db.add(progress_entry)
+    await db.commit()
+    await db.refresh(progress_entry)
+
+    return {
+        "detail": "updated" if latest_entry else "created",
+        "topic": {
+            "topic": progress_entry.topic,
+            "status": progress_entry.status,
+            "updated_at": progress_entry.updated_at,
+        },
+    }
+
+
+@router.get("/progress", response_model=ProgressOut)
+async def get_progress(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    progress_res = await db.execute(
+        select(Progress)
+        .where(Progress.user_id == user.id)
+        .order_by(Progress.updated_at.desc(), Progress.id.desc())
+    )
+    plan_res = await db.execute(
+        select(Plan).where(Plan.user_id == user.id).order_by(Plan.created_at.desc()).limit(1)
+    )
+
+    progress_entries = progress_res.scalars().all()
+    latest_plan = plan_res.scalar_one_or_none()
+    plan_topics = _extract_topics_from_plan(latest_plan)
+    return _serialize_progress(progress_entries, plan_topics)
