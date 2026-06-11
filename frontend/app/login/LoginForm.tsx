@@ -1,12 +1,32 @@
 "use client";
 
 import React, { useState } from "react";
+import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { login, signup } from "../../lib/api";
-import { sanitizeRedirectTarget } from "../../lib/auth-guards";
 
-export default function LoginForm({ initialMode = "login", redirectTo = "/dashboard", verified = false }) {
-  const [mode, setMode] = useState(initialMode);
+import { login, signup } from "@/lib/api";
+import { sanitizeRedirectTarget } from "@/lib/auth-guards";
+import type { ApiError } from "@/lib/types/api.types";
+import { authCopy } from "@/lib/ui-copy";
+
+type AuthMode = "login" | "signup";
+
+interface LoginFormProps {
+  initialMode?: AuthMode;
+  redirectTo?: string;
+  verified?: boolean;
+}
+
+function toApiError(error: unknown): ApiError {
+  return error as ApiError;
+}
+
+export default function LoginForm({
+  initialMode = "login",
+  redirectTo = "/dashboard",
+  verified = false,
+}: LoginFormProps): JSX.Element {
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
@@ -14,8 +34,11 @@ export default function LoginForm({ initialMode = "login", redirectTo = "/dashbo
   const router = useRouter();
 
   const isLogin = mode === "login";
+  const modeCopy = isLogin ? authCopy.modes.login : authCopy.modes.signup;
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
     event.preventDefault();
     setStatus("");
     setLoading(true);
@@ -23,16 +46,17 @@ export default function LoginForm({ initialMode = "login", redirectTo = "/dashbo
     try {
       if (isLogin) {
         await login({ email, password });
-        setStatus("Успешный вход");
+        setStatus(authCopy.modes.login.success);
         router.push(sanitizeRedirectTarget(redirectTo));
       } else {
         await signup({ email, password });
-        setStatus("Проверьте почту и подтвердите email, затем войдите.");
+        setStatus(authCopy.modes.signup.success);
         setMode("login");
       }
-    } catch (error) {
+    } catch (unknownError) {
+      const error = toApiError(unknownError);
       if (error.status === 403) {
-        setStatus("Подтвердите email, затем войдите.");
+        setStatus(authCopy.unverified);
       } else {
         setStatus(error.message);
       }
@@ -44,25 +68,24 @@ export default function LoginForm({ initialMode = "login", redirectTo = "/dashbo
   return (
     <section className="auth-layout">
       <div className="auth-copy">
-        <p className="eyebrow">Interview Botelo</p>
-        <h1>Подготовка к интервью без хаоса</h1>
-        <p className="muted">
-          Войдите, чтобы пройти подготовку по шагам: вакансия, бриф, генерация плана и отслеживание прогресса.
-        </p>
+        <p className="eyebrow">{authCopy.eyebrow}</p>
+        <h1>{authCopy.title}</h1>
+        <p className="muted">{authCopy.description}</p>
         <ul className="auth-highlights">
-          <li>Один экран для входа и регистрации</li>
-          <li>Пошаговый dashboard только после авторизации</li>
-          <li>Сохранение черновика и понятные статусы действий</li>
+          {authCopy.highlights.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
         </ul>
       </div>
 
       <section className="card auth-card">
-        <h2>{isLogin ? "Вход" : "Регистрация"}</h2>
-        <p className="muted">{isLogin ? "Войдите, чтобы продолжить подготовку." : "Создайте аккаунт и подтвердите email."}</p>
+        <h2>{modeCopy.heading}</h2>
+        <p className="muted">{modeCopy.description}</p>
 
         <div className="auth-switch" role="tablist" aria-label="Форма авторизации">
           <button
             type="button"
+            role="tab"
             className={`auth-switch-button ${isLogin ? "active" : ""}`}
             onClick={() => {
               setMode("login");
@@ -70,10 +93,11 @@ export default function LoginForm({ initialMode = "login", redirectTo = "/dashbo
             }}
             aria-selected={isLogin}
           >
-            Вход
+            {authCopy.modes.login.heading}
           </button>
           <button
             type="button"
+            role="tab"
             className={`auth-switch-button ${!isLogin ? "active" : ""}`}
             onClick={() => {
               setMode("signup");
@@ -81,19 +105,19 @@ export default function LoginForm({ initialMode = "login", redirectTo = "/dashbo
             }}
             aria-selected={!isLogin}
           >
-            Регистрация
+            {authCopy.modes.signup.heading}
           </button>
         </div>
 
         {verified && isLogin && (
           <p>
-            <small>Email подтверждён. Теперь можно войти.</small>
+            <small>{authCopy.verified}</small>
           </p>
         )}
 
         <form onSubmit={handleSubmit}>
           <label className="field">
-            Email
+            {authCopy.fields.email}
             <input
               type="email"
               value={email}
@@ -102,7 +126,7 @@ export default function LoginForm({ initialMode = "login", redirectTo = "/dashbo
             />
           </label>
           <label className="field">
-            Пароль
+            {authCopy.fields.password}
             <input
               type="password"
               value={password}
@@ -111,7 +135,7 @@ export default function LoginForm({ initialMode = "login", redirectTo = "/dashbo
             />
           </label>
           <button type="submit" disabled={loading}>
-            {loading ? (isLogin ? "Входим..." : "Создаём аккаунт...") : isLogin ? "Войти" : "Создать аккаунт"}
+            {loading ? modeCopy.loading : modeCopy.submit}
           </button>
         </form>
 

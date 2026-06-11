@@ -24,7 +24,7 @@ describe("middleware auth gate", () => {
       nextUrl: { pathname: "/dashboard" },
       cookies: { get: () => ({ value: `h.${payload}.s` }) },
       url: "http://localhost/dashboard",
-    });
+    } as never);
 
     expect(nextMock).toHaveBeenCalled();
     expect(response).toEqual({ type: "next" });
@@ -37,7 +37,7 @@ describe("middleware auth gate", () => {
       nextUrl: { pathname: "/dashboard" },
       cookies: { get: () => ({ value: "broken" }) },
       url: "http://localhost/dashboard",
-    });
+    } as never);
 
     expect(redirectMock).toHaveBeenCalled();
     expect(response).toEqual({ type: "redirect", url: "http://localhost/?redirect=%2Fdashboard" });
