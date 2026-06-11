@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import secrets
 import subprocess
-import zlib
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 from io import BytesIO
@@ -36,6 +35,12 @@ from app.api.schemas import (
 )
 from app.core.config import get_settings
 from app.core.time import utc_now
+from app.db.progress import (
+    get_latest_plan,
+    list_latest_progress_entries,
+    list_progress_history,
+    upsert_progress_entry,
+)
 from app.db.session import get_db
 from app.models import InterviewAnswer, InterviewSession, Plan, Progress, Question, Resume, User
 from app.services.ai_proxy import chat_completion
@@ -137,21 +142,6 @@ def _ensure_utc_datetime(value: datetime | None) -> datetime | None:
     return value.astimezone(dt_timezone.utc)
 
 
-async def _acquire_progress_topic_lock(db: AsyncSession, user_id: int, topic_key: str) -> None:
-    bind = db.get_bind()
-    if bind is None or bind.dialect.name != "postgresql":
-        return
-
-    # Блокируем обновление темы в рамках транзакции, чтобы не создавать дубли при параллельных запросах.
-    await db.execute(
-        text("SELECT pg_advisory_xact_lock(:user_id, :topic_hash)"),
-        {
-            "user_id": int(user_id),
-            "topic_hash": int(zlib.crc32(topic_key.encode("utf-8"))),
-        },
-    )
-
-
 def _extract_topics_from_plan(plan: Plan | None) -> list[str]:
     if plan is None or not plan.plan_json:
         return []
@@ -223,7 +213,9 @@ def _serialize_progress(
             {
                 "topic": latest_entry.topic if latest_entry else topic,
                 "status": current_status,
-                "updated_at": _ensure_utc_datetime(latest_entry.updated_at) if latest_entry else None,
+                "updated_at": (
+                    _ensure_utc_datetime(latest_entry.updated_at) if latest_entry else None
+                ),
             }
         )
 
@@ -411,10 +403,10 @@ async def upload_resume(
         try:
             doc = Document(BytesIO(data))
             content = "\n".join(p.text for p in doc.paragraphs)
-        except PackageNotFoundError:
-            raise HTTPException(status_code=415, detail="Failed to parse .docx file")
-        except Exception:
-            raise HTTPException(status_code=415, detail="Failed to parse .docx file")
+        except PackageNotFoundError as exc:
+            raise HTTPException(status_code=415, detail="Failed to parse .docx file") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=415, detail="Failed to parse .docx file") from exc
     elif extension == ".doc":
         # Requires system package: antiword
         try:
@@ -429,8 +421,8 @@ async def upload_resume(
             content = res.stdout
         except HTTPException:
             raise
-        except Exception:
-            raise HTTPException(status_code=415, detail="Failed to parse .doc file")
+        except Exception as exc:
+            raise HTTPException(status_code=415, detail="Failed to parse .doc file") from exc
 
     if not content.strip():
         raise HTTPException(status_code=400, detail="Empty resume")
@@ -497,18 +489,18 @@ async def generate_plan(
     try:
         ai_resp = await chat_completion(messages)
         content = ai_resp["choices"][0]["message"]["content"]
-    except Exception:
-        raise HTTPException(status_code=502, detail="Plan generation failed")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Plan generation failed") from exc
 
     try:
         plan_json = json.loads(content)
-    except Exception:
-        raise HTTPException(status_code=502, detail="Plan generation failed")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Plan generation failed") from exc
 
     try:
         validated_plan = GeneratedPlanOut.model_validate(plan_json)
-    except Exception:
-        raise HTTPException(status_code=502, detail="Plan generation failed")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Plan generation failed") from exc
 
     plan = Plan(
         user_id=user.id,
@@ -628,8 +620,8 @@ async def interview_answer(
     try:
         ai_resp = await chat_completion(messages)
         feedback = ai_resp["choices"][0]["message"]["content"]
-    except Exception:
-        raise HTTPException(status_code=502, detail="Feedback unavailable")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Feedback unavailable") from exc
 
     answer_score = _score_interview_answer(question, normalized_answer)
     answer = InterviewAnswer(
@@ -720,85 +712,34 @@ async def upsert_progress(
 ):
     normalized_topic = " ".join(data.topic.split())
     topic_key = _normalize_progress_topic(normalized_topic)
-    await _acquire_progress_topic_lock(db, user.id, topic_key)
-    latest_entry = (
-        await db.execute(
-            select(Progress)
-            .where(
-                Progress.user_id == user.id,
-                Progress.topic_key == topic_key,
-            )
-            .order_by(Progress.updated_at.desc(), Progress.id.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-
-    if latest_entry and latest_entry.status == data.status:
-        latest_topic_payload = {
-            "topic": latest_entry.topic,
-            "status": latest_entry.status,
-            "updated_at": _ensure_utc_datetime(latest_entry.updated_at),
-        }
-        await db.rollback()
-        return {
-            "detail": "unchanged",
-            "topic": latest_topic_payload,
-        }
-
-    progress_entry = Progress(
+    mutation_result = await upsert_progress_entry(
+        db,
         user_id=user.id,
         topic=normalized_topic,
         topic_key=topic_key,
         status=data.status,
         updated_at=utc_now(),
     )
-    db.add(progress_entry)
-    await db.flush()
     await db.commit()
 
     return {
-        "detail": "updated" if latest_entry else "created",
+        "detail": mutation_result.detail,
         "topic": {
-            "topic": progress_entry.topic,
-            "status": progress_entry.status,
-            "updated_at": _ensure_utc_datetime(progress_entry.updated_at),
+            "topic": mutation_result.topic.topic,
+            "status": mutation_result.topic.status,
+            "updated_at": _ensure_utc_datetime(mutation_result.topic.updated_at),
         },
     }
 
 
 @router.get("/progress", response_model=ProgressOut)
 async def get_progress(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    latest_ranked_progress = (
-        select(
-            Progress.id.label("id"),
-            func.row_number()
-            .over(
-                partition_by=Progress.topic_key,
-                order_by=(Progress.updated_at.desc(), Progress.id.desc()),
-            )
-            .label("row_number"),
-        )
-        .where(Progress.user_id == user.id)
-        .subquery()
+    latest_progress_entries = await list_latest_progress_entries(db, user_id=user.id)
+    history_entries = await list_progress_history(
+        db,
+        user_id=user.id,
+        limit=PROGRESS_HISTORY_LIMIT,
     )
-    latest_progress_res = await db.execute(
-        select(Progress)
-        .join(latest_ranked_progress, Progress.id == latest_ranked_progress.c.id)
-        .where(latest_ranked_progress.c.row_number == 1)
-        .order_by(Progress.updated_at.desc(), Progress.id.desc())
-    )
-    history_res = await db.execute(
-        select(Progress)
-        .where(Progress.user_id == user.id)
-        .order_by(Progress.updated_at.desc(), Progress.id.desc())
-        .limit(PROGRESS_HISTORY_LIMIT)
-    )
-    plan_res = await db.execute(
-        select(Plan).where(Plan.user_id == user.id).order_by(Plan.created_at.desc()).limit(1)
-    )
-
-    latest_progress_entries = latest_progress_res.scalars().all()
-    history_entries = history_res.scalars().all()
-    latest_plan = plan_res.scalar_one_or_none()
+    latest_plan = await get_latest_plan(db, user_id=user.id)
     plan_topics = _extract_topics_from_plan(latest_plan)
     return _serialize_progress(latest_progress_entries, plan_topics, history_entries)

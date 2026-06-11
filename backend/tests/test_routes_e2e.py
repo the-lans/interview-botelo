@@ -3,13 +3,13 @@ import json
 import pytest
 from sqlalchemy import select
 
-from app.models import Plan, Progress, User
+from app.api import routes
+from app.db.session import SessionLocal
+from app.models import Plan, Progress, Question, User
 from app.services.security import hash_email_token
 
 
-async def _register_and_login(client, email: str, password: str = "pass1234"):
-    from app.db.session import SessionLocal
-
+async def _register_and_login(client, email: str, password: str = "pass1234") -> None:
     signup = await client.post("/auth/signup", json={"email": email, "password": password})
     assert signup.status_code == 200
 
@@ -32,9 +32,6 @@ async def _register_and_login(client, email: str, password: str = "pass1234"):
 
 @pytest.mark.asyncio
 async def test_e2e_core_flow(client, monkeypatch):
-    from app.db.session import SessionLocal
-    from app.models import Question
-
     await _register_and_login(client, "e2e-core@test.com")
 
     async with SessionLocal() as session:
@@ -92,8 +89,6 @@ async def test_e2e_core_flow(client, monkeypatch):
     # interview feedback
     async def fake_feedback(messages, model="openclaw/devius"):
         return {"choices": [{"message": {"content": "good"}}]}
-
-    from app.api import routes
 
     monkeypatch.setattr(routes, "chat_completion", fake_plan)
 
@@ -178,8 +173,6 @@ async def test_routes_error_scenarios_extra(client, monkeypatch):
         returncode = 1
         stdout = ""
 
-    from app.api import routes
-
     monkeypatch.setattr(routes.subprocess, "run", lambda *args, **kwargs: ProcRes())
     bad_doc = await client.post(
         "/upload/resume",
@@ -238,8 +231,6 @@ async def test_routes_error_scenarios_extra(client, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_progress_aggregates_plan_topics_and_history(client):
-    from app.db.session import SessionLocal
-
     email = "progress-plan@test.com"
     await _register_and_login(client, email)
 
@@ -283,7 +274,12 @@ async def test_progress_aggregates_plan_topics_and_history(client):
             [
                 Progress(user_id=user.id, topic_key="python", topic="Python", status="todo"),
                 Progress(user_id=user.id, topic_key="python", topic="Python", status="done"),
-                Progress(user_id=user.id, topic_key="algorithms", topic="Algorithms", status="in_progress"),
+                Progress(
+                    user_id=user.id,
+                    topic_key="algorithms",
+                    topic="Algorithms",
+                    status="in_progress",
+                ),
             ]
         )
         await session.commit()
@@ -321,8 +317,6 @@ async def test_progress_aggregates_plan_topics_and_history(client):
 
 @pytest.mark.asyncio
 async def test_progress_upsert_returns_unchanged_when_status_matches_latest(client):
-    from app.db.session import SessionLocal
-
     email = "progress-unchanged@test.com"
     await _register_and_login(client, email)
 
@@ -342,8 +336,6 @@ async def test_progress_upsert_returns_unchanged_when_status_matches_latest(clie
 
 @pytest.mark.asyncio
 async def test_progress_history_is_limited(client):
-    from app.db.session import SessionLocal
-
     email = "progress-history-limit@test.com"
     await _register_and_login(client, email)
 

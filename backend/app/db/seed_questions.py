@@ -1,7 +1,6 @@
-from datetime import datetime, timezone
-
 from sqlalchemy import select
 
+from app.core.time import utc_now
 from app.db.session import AsyncSessionLocal
 from app.models.question import Question
 
@@ -11,14 +10,20 @@ SEED_QUESTIONS = [
         "topic": "python",
         "difficulty": "middle",
         "tags": "python,concurrency,threads",
-        "sample_answer": "GIL ограничивает одновременное выполнение Python-байткода в одном процессе.",
+        "sample_answer": (
+            "GIL ограничивает одновременное выполнение Python-байткода "
+            "в одном процессе."
+        ),
     },
     {
         "text": "Объясните разницу между LEFT JOIN и INNER JOIN.",
         "topic": "database",
         "difficulty": "junior",
         "tags": "sql,joins,postgres",
-        "sample_answer": "INNER JOIN оставляет только пересечение, LEFT JOIN сохраняет все строки из левой таблицы.",
+        "sample_answer": (
+            "INNER JOIN оставляет только пересечение, "
+            "LEFT JOIN сохраняет все строки из левой таблицы."
+        ),
     },
     {
         "text": "Как спроектировать rate limiter для API?",
@@ -44,7 +49,7 @@ async def seed_questions() -> int:
                     topic=item["topic"],
                     difficulty=item["difficulty"],
                     tags=item["tags"],
-                    created_at=datetime.now(timezone.utc),
+                    created_at=utc_now(),
                     sample_answer=item["sample_answer"],
                 )
             )
