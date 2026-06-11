@@ -141,6 +141,60 @@ async def on_startup():
             pass
         try:
             await conn.execute(
+                text("ALTER TABLE progress ADD COLUMN IF NOT EXISTS topic_key VARCHAR(120)")
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
+                    "UPDATE progress "
+                    "SET topic_key = LOWER(REGEXP_REPLACE(BTRIM(topic), '\\s+', ' ', 'g')) "
+                    "WHERE topic_key IS NULL OR topic_key = ''"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE progress "
+                    "ALTER COLUMN topic_key SET NOT NULL"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_progress_user_topic_key_updated_at "
+                    "ON progress (user_id, topic_key, updated_at DESC, id DESC)"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE progress "
+                    "ALTER COLUMN updated_at TYPE TIMESTAMPTZ "
+                    "USING updated_at AT TIME ZONE 'UTC'"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE plans "
+                    "ALTER COLUMN created_at TYPE TIMESTAMPTZ "
+                    "USING created_at AT TIME ZONE 'UTC'"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
                 text("ALTER TABLE questions ADD COLUMN IF NOT EXISTS tags VARCHAR(512) DEFAULT ''")
             )
         except Exception:
