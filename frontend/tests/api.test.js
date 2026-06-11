@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 process.env.NEXT_PUBLIC_API_BASE = "http://test";
 
-import { fetchProgress, generatePlan, ingestVacancy, login, logout } from "../lib/api";
+import { fetchProgress, generatePlan, ingestVacancy, login, logout, updateProgress } from "../lib/api";
 
 const mockFetch = (payload, ok = true) =>
   vi.fn().mockResolvedValue({
@@ -68,13 +68,36 @@ describe("api client", () => {
     delete global.document;
   });
 
-  it("fetchProgress returns array", async () => {
-    vi.stubGlobal("fetch", mockFetch([{ topic: "Python", status: "todo" }]));
+  it("fetchProgress returns progress payload", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({
+        summary: { total_topics: 1, completed_topics: 0, completion_percent: 0, status_counts: { todo: 1, in_progress: 0, done: 0 } },
+        topics: [{ topic: "Python", status: "todo", updated_at: null }],
+        history: [],
+      })
+    );
 
     const data = await fetchProgress();
 
-    expect(data).toHaveLength(1);
-    expect(data[0].topic).toBe("Python");
+    expect(data.summary.total_topics).toBe(1);
+    expect(data.topics[0].topic).toBe("Python");
+  });
+
+  it("updateProgress posts payload", async () => {
+    const fetchSpy = mockFetch({
+      detail: "updated",
+      topic: { topic: "Python", status: "done", updated_at: "2026-06-11T08:00:00Z" },
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const data = await updateProgress({ topic: "Python", status: "done" });
+
+    expect(data.detail).toBe("updated");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://test/progress",
+      expect.objectContaining({ method: "POST" })
+    );
   });
 
   it("ingestVacancy posts payload", async () => {
