@@ -1,0 +1,1249 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Interview Coach",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/auth/signup": {
+      "post": {
+        "summary": "Signup",
+        "operationId": "signup_auth_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Login",
+        "operationId": "login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "summary": "Logout",
+        "operationId": "logout_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/verify": {
+      "get": {
+        "summary": "Verify Email",
+        "operationId": "verify_email_auth_verify_get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/resend-verification": {
+      "post": {
+        "summary": "Resend Verification",
+        "operationId": "resend_verification_auth_resend_verification_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResendVerificationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/upload/resume": {
+      "post": {
+        "summary": "Upload Resume",
+        "operationId": "upload_resume_upload_resume_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_resume_upload_resume_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vacancy/ingest": {
+      "post": {
+        "summary": "Vacancy Ingest",
+        "operationId": "vacancy_ingest_vacancy_ingest_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VacancyIngestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VacancyIngestOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plan/generate": {
+      "post": {
+        "summary": "Generate Plan",
+        "operationId": "generate_plan_plan_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanGenerateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/questions": {
+      "get": {
+        "summary": "Get Questions",
+        "operationId": "get_questions_questions_get",
+        "parameters": [
+          {
+            "name": "topic",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          },
+          {
+            "name": "difficulty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(junior|middle|senior)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Difficulty"
+            }
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tags"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/interview/start": {
+      "post": {
+        "summary": "Interview Start",
+        "operationId": "interview_start_interview_start_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterviewStartOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/interview/answer": {
+      "post": {
+        "summary": "Interview Answer",
+        "operationId": "interview_answer_interview_answer_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterviewAnswerIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterviewAnswerOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/progress": {
+      "get": {
+        "summary": "Get Progress",
+        "operationId": "get_progress_progress_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Upsert Progress",
+        "operationId": "upsert_progress_progress_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProgressUpsertIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressUpsertOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_upload_resume_upload_resume_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_resume_upload_resume_post"
+      },
+      "GeneratedPlanOut": {
+        "properties": {
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "gap_analysis": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Gap Analysis"
+          },
+          "weeks": {
+            "items": {
+              "$ref": "#/components/schemas/GeneratedPlanWeekOut"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Weeks"
+          },
+          "final_readiness_check": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Final Readiness Check"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary",
+          "gap_analysis",
+          "weeks",
+          "final_readiness_check"
+        ],
+        "title": "GeneratedPlanOut"
+      },
+      "GeneratedPlanWeekOut": {
+        "properties": {
+          "week": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Week"
+          },
+          "themes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Themes"
+          },
+          "practice": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Practice"
+          },
+          "mock_interview": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Mock Interview"
+          },
+          "expected_outcome": {
+            "type": "string",
+            "title": "Expected Outcome"
+          },
+          "time_budget_hours": {
+            "type": "integer",
+            "maximum": 168.0,
+            "minimum": 0.0,
+            "title": "Time Budget Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "week",
+          "themes",
+          "practice",
+          "mock_interview",
+          "expected_outcome",
+          "time_budget_hours"
+        ],
+        "title": "GeneratedPlanWeekOut"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "InterviewAnswerIn": {
+        "properties": {
+          "session_id": {
+            "type": "integer",
+            "title": "Session Id"
+          },
+          "question_id": {
+            "type": "integer",
+            "title": "Question Id"
+          },
+          "answer": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Answer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "question_id",
+          "answer"
+        ],
+        "title": "InterviewAnswerIn"
+      },
+      "InterviewAnswerOut": {
+        "properties": {
+          "feedback": {
+            "type": "string",
+            "title": "Feedback"
+          },
+          "score": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Score"
+          },
+          "completed": {
+            "type": "boolean",
+            "title": "Completed"
+          },
+          "session_score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Score"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "next_question_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Question Id"
+          },
+          "next_question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Question"
+          }
+        },
+        "type": "object",
+        "required": [
+          "feedback",
+          "score",
+          "completed"
+        ],
+        "title": "InterviewAnswerOut"
+      },
+      "InterviewStartOut": {
+        "properties": {
+          "session_id": {
+            "type": "integer",
+            "title": "Session Id"
+          },
+          "question_id": {
+            "type": "integer",
+            "title": "Question Id"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "question_id",
+          "question"
+        ],
+        "title": "InterviewStartOut"
+      },
+      "LoginIn": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginIn"
+      },
+      "MessageOut": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "MessageOut"
+      },
+      "PlanBriefIn": {
+        "properties": {
+          "target_role": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 2,
+            "title": "Target Role"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "Junior",
+              "Junior+",
+              "Middle",
+              "Middle+",
+              "Senior"
+            ],
+            "title": "Level"
+          },
+          "horizon_weeks": {
+            "type": "integer",
+            "enum": [
+              2,
+              4,
+              6
+            ],
+            "title": "Horizon Weeks"
+          },
+          "time_availability": {
+            "$ref": "#/components/schemas/TimeAvailabilityIn"
+          },
+          "plan_format": {
+            "type": "string",
+            "enum": [
+              "themes",
+              "themes+practice",
+              "themes+practice+mock_interview"
+            ],
+            "title": "Plan Format"
+          },
+          "priorities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Priorities"
+          },
+          "other_priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Priority"
+          },
+          "constraints": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Constraints"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "title": "Language"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_role",
+          "level",
+          "horizon_weeks",
+          "time_availability",
+          "plan_format",
+          "priorities",
+          "language"
+        ],
+        "title": "PlanBriefIn"
+      },
+      "PlanGenerateOut": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "plan_id": {
+            "type": "integer",
+            "title": "Plan Id"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/GeneratedPlanOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail",
+          "plan_id",
+          "plan"
+        ],
+        "title": "PlanGenerateOut"
+      },
+      "PlanIn": {
+        "properties": {
+          "resume_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Text"
+          },
+          "vacancy_text": {
+            "type": "string",
+            "title": "Vacancy Text"
+          },
+          "brief": {
+            "$ref": "#/components/schemas/PlanBriefIn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vacancy_text",
+          "brief"
+        ],
+        "title": "PlanIn"
+      },
+      "ProgressHistoryOut": {
+        "properties": {
+          "topic": {
+            "type": "string",
+            "title": "Topic"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "todo",
+              "in_progress",
+              "done"
+            ],
+            "title": "Status"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "topic",
+          "status",
+          "updated_at"
+        ],
+        "title": "ProgressHistoryOut"
+      },
+      "ProgressOut": {
+        "properties": {
+          "summary": {
+            "$ref": "#/components/schemas/ProgressSummaryOut"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/ProgressTopicOut"
+            },
+            "type": "array",
+            "title": "Topics"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ProgressHistoryOut"
+            },
+            "type": "array",
+            "title": "History"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary",
+          "topics",
+          "history"
+        ],
+        "title": "ProgressOut"
+      },
+      "ProgressStatusCountsOut": {
+        "properties": {
+          "todo": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Todo"
+          },
+          "in_progress": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "In Progress"
+          },
+          "done": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Done"
+          }
+        },
+        "type": "object",
+        "required": [
+          "todo",
+          "in_progress",
+          "done"
+        ],
+        "title": "ProgressStatusCountsOut"
+      },
+      "ProgressSummaryOut": {
+        "properties": {
+          "total_topics": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Topics"
+          },
+          "completed_topics": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Completed Topics"
+          },
+          "completion_percent": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Completion Percent"
+          },
+          "status_counts": {
+            "$ref": "#/components/schemas/ProgressStatusCountsOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_topics",
+          "completed_topics",
+          "completion_percent",
+          "status_counts"
+        ],
+        "title": "ProgressSummaryOut"
+      },
+      "ProgressTopicOut": {
+        "properties": {
+          "topic": {
+            "type": "string",
+            "title": "Topic"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "todo",
+              "in_progress",
+              "done"
+            ],
+            "title": "Status"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "topic",
+          "status"
+        ],
+        "title": "ProgressTopicOut"
+      },
+      "ProgressUpsertIn": {
+        "properties": {
+          "topic": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Topic"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "todo",
+              "in_progress",
+              "done"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "topic",
+          "status"
+        ],
+        "title": "ProgressUpsertIn"
+      },
+      "ProgressUpsertOut": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "enum": [
+              "created",
+              "updated",
+              "unchanged"
+            ],
+            "title": "Detail"
+          },
+          "topic": {
+            "$ref": "#/components/schemas/ProgressTopicOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail",
+          "topic"
+        ],
+        "title": "ProgressUpsertOut"
+      },
+      "ResendVerificationIn": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "ResendVerificationIn"
+      },
+      "SignupIn": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "SignupIn"
+      },
+      "TimeAvailabilityIn": {
+        "properties": {
+          "weekday_hours": {
+            "type": "integer",
+            "maximum": 24.0,
+            "minimum": 0.0,
+            "title": "Weekday Hours"
+          },
+          "weekend_hours": {
+            "type": "integer",
+            "maximum": 24.0,
+            "minimum": 0.0,
+            "title": "Weekend Hours"
+          }
+        },
+        "type": "object",
+        "required": [
+          "weekday_hours",
+          "weekend_hours"
+        ],
+        "title": "TimeAvailabilityIn"
+      },
+      "VacancyIngestIn": {
+        "properties": {
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "raw_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Text"
+          }
+        },
+        "type": "object",
+        "title": "VacancyIngestIn"
+      },
+      "VacancyIngestOut": {
+        "properties": {
+          "vacancy_text": {
+            "type": "string",
+            "title": "Vacancy Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vacancy_text"
+        ],
+        "title": "VacancyIngestOut"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
