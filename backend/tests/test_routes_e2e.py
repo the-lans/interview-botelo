@@ -162,6 +162,8 @@ async def test_e2e_core_flow(client, monkeypatch):
             "updated_at": progress_payload["history"][0]["updated_at"],
         }
     ]
+    assert progress_payload["topics"][0]["updated_at"].endswith(("+00:00", "Z"))
+    assert progress_payload["history"][0]["updated_at"].endswith(("+00:00", "Z"))
 
     logout = await client.post("/auth/logout")
     assert logout.status_code == 200
@@ -279,9 +281,9 @@ async def test_progress_aggregates_plan_topics_and_history(client):
         )
         session.add_all(
             [
-                Progress(user_id=user.id, topic="Python", status="todo"),
-                Progress(user_id=user.id, topic="Python", status="done"),
-                Progress(user_id=user.id, topic="Algorithms", status="in_progress"),
+                Progress(user_id=user.id, topic_key="python", topic="Python", status="todo"),
+                Progress(user_id=user.id, topic_key="python", topic="Python", status="done"),
+                Progress(user_id=user.id, topic_key="algorithms", topic="Algorithms", status="in_progress"),
             ]
         )
         await session.commit()
@@ -326,7 +328,7 @@ async def test_progress_upsert_returns_unchanged_when_status_matches_latest(clie
 
     async with SessionLocal() as session:
         user = (await session.execute(select(User).where(User.email == email))).scalar_one()
-        session.add(Progress(user_id=user.id, topic="Python", status="done"))
+        session.add(Progress(user_id=user.id, topic_key="python", topic="Python", status="done"))
         await session.commit()
 
     unchanged = await client.post("/progress", json={"topic": "  python  ", "status": "done"})
@@ -336,3 +338,32 @@ async def test_progress_upsert_returns_unchanged_when_status_matches_latest(clie
     history = await client.get("/progress")
     assert history.status_code == 200
     assert len(history.json()["history"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_progress_history_is_limited(client):
+    from app.db.session import SessionLocal
+
+    email = "progress-history-limit@test.com"
+    await _register_and_login(client, email)
+
+    async with SessionLocal() as session:
+        user = (await session.execute(select(User).where(User.email == email))).scalar_one()
+        session.add_all(
+            [
+                Progress(
+                    user_id=user.id,
+                    topic_key=f"topic-{index}",
+                    topic=f"Topic {index}",
+                    status="done" if index % 2 else "todo",
+                )
+                for index in range(55)
+            ]
+        )
+        await session.commit()
+
+    history = await client.get("/progress")
+    assert history.status_code == 200
+    body = history.json()
+    assert len(body["history"]) == 50
+    assert body["summary"]["total_topics"] == 55
