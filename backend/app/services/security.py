@@ -1,11 +1,12 @@
 import hashlib
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from jose import jwt
 from passlib.context import CryptContext
 
 from app.core.config import get_settings
+from app.core.time import utc_now
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
@@ -21,7 +22,7 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 def create_access_token(subject: str, expires_minutes: int = 60 * 24 * 7) -> str:
-    now = datetime.utcnow()
+    now = utc_now()
     payload: dict[str, Any] = {
         "sub": subject,
         "iat": int(now.timestamp()),
