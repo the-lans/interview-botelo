@@ -64,6 +64,13 @@ export function fetchProgress() {
   return request("/progress", { method: "GET" });
 }
 
+export function updateProgress(payload) {
+  return request("/progress", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function ingestVacancy(payload) {
   return request("/vacancy/ingest", {
     method: "POST",

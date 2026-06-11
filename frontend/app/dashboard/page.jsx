@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { fetchProgress, generatePlan, ingestVacancy, logout } from "../../lib/api";
+import { fetchProgress, generatePlan, ingestVacancy, logout, updateProgress } from "../../lib/api";
 
 const defaultBrief = {
   target_role: "",
@@ -17,6 +17,21 @@ const defaultBrief = {
   language: "RU",
 };
 
+const defaultProgressData = {
+  summary: {
+    total_topics: 0,
+    completed_topics: 0,
+    completion_percent: 0,
+    status_counts: {
+      todo: 0,
+      in_progress: 0,
+      done: 0,
+    },
+  },
+  topics: [],
+  history: [],
+};
+
 const priorityOptions = [
   "Алгоритмы",
   "System Design",
@@ -25,6 +40,26 @@ const priorityOptions = [
   "Backend Architecture",
   "Поведенческая часть (behavioral)",
 ];
+
+const progressStatusOptions = [
+  { value: "todo", label: "К изучению" },
+  { value: "in_progress", label: "В процессе" },
+  { value: "done", label: "Готово" },
+];
+
+const progressStatusLabels = {
+  todo: "К изучению",
+  in_progress: "В процессе",
+  done: "Готово",
+};
+
+const progressMetricLabels = {
+  total_topics: "Всего тем",
+  completed_topics: "Завершено",
+  todo: "К изучению",
+  in_progress: "В процессе",
+  done: "Готово",
+};
 
 const statusTypeMap = {
   success: "alert-success",
@@ -35,9 +70,27 @@ const statusTypeMap = {
 const stepLabels = ["Резюме и вакансия", "Бриф", "Генерация", "Результат и прогресс"];
 const DRAFT_KEY = "dashboardDraftV1";
 
+function formatProgressDate(value) {
+  if (!value) {
+    return "Ещё не обновлялось";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Дата недоступна";
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(parsed);
+}
+
 export default function DashboardPage() {
   const [currentStep, setCurrentStep] = useState(0);
-  const [progress, setProgress] = useState([]);
+  const [progressData, setProgressData] = useState(defaultProgressData);
+  const [progressError, setProgressError] = useState("");
+  const [isProgressLoading, setIsProgressLoading] = useState(true);
   const [status, setStatus] = useState({ type: "", message: "" });
   const [needsLogin, setNeedsLogin] = useState(false);
   const [vacancyMode, setVacancyMode] = useState("raw_text");
@@ -49,6 +102,7 @@ export default function DashboardPage() {
   const [isIngestLoading, setIsIngestLoading] = useState(false);
   const [isGenerateLoading, setIsGenerateLoading] = useState(false);
   const [isLogoutLoading, setIsLogoutLoading] = useState(false);
+  const [updatingTopic, setUpdatingTopic] = useState("");
   const router = useRouter();
 
   const canMoveToBrief = useMemo(() => Boolean(vacancyText.trim()), [vacancyText]);
@@ -66,6 +120,17 @@ export default function DashboardPage() {
     }
     return 3;
   }, [canMoveToBrief, canMoveToGenerate, planResult]);
+
+  const progressMetrics = useMemo(
+    () => [
+      { key: "total_topics", value: progressData.summary.total_topics },
+      { key: "completed_topics", value: progressData.summary.completed_topics },
+      { key: "todo", value: progressData.summary.status_counts.todo },
+      { key: "in_progress", value: progressData.summary.status_counts.in_progress },
+      { key: "done", value: progressData.summary.status_counts.done },
+    ],
+    [progressData]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -114,30 +179,41 @@ export default function DashboardPage() {
     router.replace("/?redirect=/dashboard");
   };
 
+  const loadProgress = async ({ silent = false, unauthorizedMessage, errorMessage } = {}) => {
+    if (!silent) {
+      setIsProgressLoading(true);
+      setProgressError("");
+    }
+
+    try {
+      const data = await fetchProgress();
+      setNeedsLogin(false);
+      setProgressData(data);
+      setProgressError("");
+      return data;
+    } catch (error) {
+      if (error.status === 401) {
+        setProgressData(defaultProgressData);
+        setProgressError("");
+        redirectToLogin(unauthorizedMessage || "Нужно войти, чтобы увидеть прогресс.");
+        return null;
+      }
+
+      const message = error.message || errorMessage || "Не удалось загрузить прогресс.";
+      setProgressError(message);
+      if (!silent) {
+        setStatus({ type: "error", message });
+      }
+      return null;
+    } finally {
+      if (!silent) {
+        setIsProgressLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
-    let mounted = true;
-    fetchProgress()
-      .then((data) => {
-        if (mounted) {
-          setProgress(data);
-        }
-      })
-      .catch((error) => {
-        if (!mounted) {
-          return;
-        }
-
-        if (error.status === 401) {
-          redirectToLogin("Нужно войти, чтобы увидеть прогресс.");
-          return;
-        }
-
-        setStatus({ type: "error", message: error.message || "Не удалось загрузить прогресс." });
-      });
-
-    return () => {
-      mounted = false;
-    };
+    void loadProgress({ unauthorizedMessage: "Нужно войти, чтобы увидеть прогресс." });
   }, []);
 
   const handleLogout = async () => {
@@ -226,6 +302,10 @@ export default function DashboardPage() {
       setPlanResult(response);
       setCurrentStep(3);
       setStatus({ type: "success", message: "План подготовки сгенерирован." });
+      await loadProgress({
+        silent: true,
+        unauthorizedMessage: "Сессия истекла. Войдите снова, чтобы продолжить.",
+      });
     } catch (error) {
       if (error.status === 401) {
         redirectToLogin("Сессия истекла. Войдите снова, чтобы продолжить.");
@@ -234,6 +314,27 @@ export default function DashboardPage() {
       setStatus({ type: "error", message: error.message || "Ошибка генерации плана." });
     } finally {
       setIsGenerateLoading(false);
+    }
+  };
+
+  const handleProgressStatusChange = async (topic, nextStatus) => {
+    setStatus({ type: "", message: "" });
+    setUpdatingTopic(topic);
+    try {
+      await updateProgress({ topic, status: nextStatus });
+      await loadProgress({
+        silent: true,
+        unauthorizedMessage: "Сессия истекла. Войдите снова, чтобы продолжить.",
+      });
+      setStatus({ type: "success", message: `Статус темы «${topic}» обновлён.` });
+    } catch (error) {
+      if (error.status === 401) {
+        redirectToLogin("Сессия истекла. Войдите снова, чтобы продолжить.");
+        return;
+      }
+      setStatus({ type: "error", message: error.message || "Не удалось обновить статус темы." });
+    } finally {
+      setUpdatingTopic("");
     }
   };
 
@@ -516,21 +617,103 @@ export default function DashboardPage() {
           </div>
 
           <div className="card section">
-            <h2>Прогресс</h2>
-            {progress.length === 0 ? (
+            <div className="progress-header">
+              <div>
+                <h2>Прогресс</h2>
+                <p className="muted">Отмечайте темы прямо в dashboard. Процент и история синхронизируются с backend.</p>
+              </div>
+              <div className="progress-ring" aria-label={`Прогресс ${progressData.summary.completion_percent}%`}>
+                <strong>{progressData.summary.completion_percent}%</strong>
+                <span>выполнено</span>
+              </div>
+            </div>
+
+            {isProgressLoading ? (
               <div className="empty-state">
-                <p>Пока нет записей прогресса.</p>
-                <p className="muted">Сгенерируйте план и начните отмечать выполнение шагов.</p>
+                <p>Загружаем прогресс...</p>
+              </div>
+            ) : progressError ? (
+              <div className="empty-state empty-state-error">
+                <p>Не удалось загрузить прогресс.</p>
+                <p className="muted">{progressError}</p>
+                <button type="button" onClick={() => loadProgress({ errorMessage: "Не удалось загрузить прогресс." })}>
+                  Повторить
+                </button>
               </div>
             ) : (
-              <ul className="progress-list">
-                {progress.map((item) => (
-                  <li key={`${item.topic}-${item.updated_at}`} className="progress-item">
-                    <span>{item.topic}</span>
-                    <span className="status-badge">{item.status}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="progress-layout">
+                <div className="progress-column">
+                  <div className="progress-summary-grid">
+                    {progressMetrics.map((metric) => (
+                      <article key={metric.key} className="progress-metric-card">
+                        <span>{progressMetricLabels[metric.key]}</span>
+                        <strong>{metric.value}</strong>
+                      </article>
+                    ))}
+                  </div>
+
+                  {progressData.topics.length === 0 ? (
+                    <div className="empty-state">
+                      <p>Пока нет тем прогресса.</p>
+                      <p className="muted">Сгенерируйте план, чтобы получить темы и отмечать по ним статус.</p>
+                    </div>
+                  ) : (
+                    <div className="progress-topics-grid">
+                      {progressData.topics.map((item) => {
+                        const isSaving = updatingTopic === item.topic;
+                        return (
+                          <article key={item.topic} className="progress-topic-card">
+                            <div className="progress-topic-head">
+                              <div>
+                                <h3>{item.topic}</h3>
+                                <p className="muted">Обновлено: {formatProgressDate(item.updated_at)}</p>
+                              </div>
+                              <span className={`status-badge status-${item.status}`}>{progressStatusLabels[item.status]}</span>
+                            </div>
+
+                            <label className="progress-select-field">
+                              <span>Статус темы</span>
+                              <select
+                                aria-label={`Статус темы ${item.topic}`}
+                                value={item.status}
+                                disabled={isSaving}
+                                onChange={(event) => handleProgressStatusChange(item.topic, event.target.value)}
+                              >
+                                {progressStatusOptions.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            {isSaving && <p className="muted">Сохраняем обновление...</p>}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <aside className="progress-history-card">
+                  <h3>История изменений</h3>
+                  {progressData.history.length === 0 ? (
+                    <p className="muted">История появится после первого обновления статуса.</p>
+                  ) : (
+                    <ul className="history-list">
+                      {progressData.history.map((entry, index) => (
+                        <li key={`${entry.topic}-${entry.updated_at}-${index}`} className="history-item">
+                          <div>
+                            <strong>{entry.topic}</strong>
+                            <p className="muted">{formatProgressDate(entry.updated_at)}</p>
+                          </div>
+                          <span className={`status-badge status-${entry.status}`}>{progressStatusLabels[entry.status]}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </aside>
+              </div>
             )}
           </div>
         </>
