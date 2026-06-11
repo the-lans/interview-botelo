@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { isProbablyValidSessionCookie, sanitizeRedirectTarget } from "../lib/auth-guards";
+import {
+  isProbablyValidSessionCookie,
+  sanitizeRedirectTarget,
+} from "../lib/auth-guards";
 
 describe("auth guards", () => {
   it("разрешает только безопасные внутренние redirect", () => {

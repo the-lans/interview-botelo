@@ -43,19 +43,24 @@ describe("auth flow", () => {
   });
 
   it("логинит и редиректит в dashboard", async () => {
-    api.login.mockResolvedValue({ detail: "ok" });
+    vi.mocked(api.login).mockResolvedValue({ detail: "ok" });
     render(<LoginForm initialMode="login" />);
 
     await userEvent.type(screen.getByLabelText("Email"), "user@test.com");
     await userEvent.type(screen.getByLabelText("Пароль"), "secret");
     await userEvent.click(screen.getByRole("button", { name: "Войти" }));
 
-    await waitFor(() => expect(api.login).toHaveBeenCalledWith({ email: "user@test.com", password: "secret" }));
+    await waitFor(() =>
+      expect(api.login).toHaveBeenCalledWith({
+        email: "user@test.com",
+        password: "secret",
+      }),
+    );
     expect(pushMock).toHaveBeenCalledWith("/dashboard");
   });
 
   it("возвращает пользователя на целевой маршрут после логина", async () => {
-    api.login.mockResolvedValue({ detail: "ok" });
+    vi.mocked(api.login).mockResolvedValue({ detail: "ok" });
     render(<LoginForm initialMode="login" redirectTo="/dashboard" />);
 
     await userEvent.type(screen.getByLabelText("Email"), "user@test.com");
@@ -66,14 +71,19 @@ describe("auth flow", () => {
   });
 
   it("регистрирует и возвращает в режим входа", async () => {
-    api.signup.mockResolvedValue({ detail: "ok" });
+    vi.mocked(api.signup).mockResolvedValue({ detail: "ok" });
     render(<LoginForm initialMode="signup" />);
 
     await userEvent.type(screen.getByLabelText("Email"), "new@test.com");
     await userEvent.type(screen.getByLabelText("Пароль"), "secret");
     await userEvent.click(screen.getByRole("button", { name: "Создать аккаунт" }));
 
-    await waitFor(() => expect(api.signup).toHaveBeenCalledWith({ email: "new@test.com", password: "secret" }));
+    await waitFor(() =>
+      expect(api.signup).toHaveBeenCalledWith({
+        email: "new@test.com",
+        password: "secret",
+      }),
+    );
     expect(await screen.findByRole("heading", { name: "Вход" })).toBeInTheDocument();
   });
 

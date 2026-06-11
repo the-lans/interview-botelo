@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
 import { isProbablyValidSessionCookie } from "./lib/auth-guards";
 
-export function middleware(request) {
+export function middleware(request: NextRequest): NextResponse {
   if (!request.nextUrl.pathname.startsWith("/dashboard")) {
     return NextResponse.next();
   }

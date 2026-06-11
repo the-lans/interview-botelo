@@ -2,7 +2,15 @@ import { redirect } from "next/navigation";
 
 import { sanitizeRedirectTarget } from "../../lib/auth-guards";
 
-export default function LoginPage({ searchParams }) {
+interface LoginPageProps {
+  searchParams?: {
+    mode?: string;
+    redirect?: string;
+    verified?: string;
+  };
+}
+
+export default function LoginPage({ searchParams }: LoginPageProps): never {
   const nextSearchParams = new URLSearchParams();
 
   if (searchParams?.mode === "signup") {

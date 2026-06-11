@@ -2,13 +2,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 process.env.NEXT_PUBLIC_API_BASE = "http://test";
 
-import { fetchProgress, generatePlan, ingestVacancy, login, logout, updateProgress } from "../lib/api";
+import {
+  fetchProgress,
+  generatePlan,
+  ingestVacancy,
+  login,
+  logout,
+  updateProgress,
+} from "../lib/api";
+import type { PlanBriefPayload } from "../lib/types/api.types";
 
-const mockFetch = (payload, ok = true) =>
+const mockFetch = <TPayload,>(payload: TPayload, ok = true): typeof fetch =>
   vi.fn().mockResolvedValue({
     ok,
     json: vi.fn().mockResolvedValue(payload),
-  });
+  }) as unknown as typeof fetch;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -47,12 +55,16 @@ describe("api client", () => {
     try {
       await fetchProgress();
     } catch (error) {
-      expect(error.status).toBe(401);
+      const apiError = error as Error & { status?: number };
+      expect(apiError.status).toBe(401);
     }
   });
 
   it("adds csrf token for non-GET requests", async () => {
-    global.document = { cookie: "csrf_token=abc123" };
+    Object.defineProperty(globalThis, "document", {
+      value: { cookie: "csrf_token=abc123" } as Partial<Document>,
+      configurable: true,
+    });
     const fetchSpy = mockFetch({ detail: "ok" });
     vi.stubGlobal("fetch", fetchSpy);
 
@@ -65,7 +77,7 @@ describe("api client", () => {
       })
     );
 
-    delete global.document;
+    Reflect.deleteProperty(globalThis, "document");
   });
 
   it("fetchProgress returns progress payload", async () => {
@@ -116,11 +128,23 @@ describe("api client", () => {
   it("generatePlan posts payload", async () => {
     const fetchSpy = mockFetch({ detail: "ok", plan_id: 1, plan: { summary: "ok" } });
     vi.stubGlobal("fetch", fetchSpy);
+    const brief: PlanBriefPayload = {
+      target_role: "Backend",
+      level: "Middle",
+      horizon_weeks: 4,
+      time_availability: {
+        weekday_hours: 2,
+        weekend_hours: 4,
+      },
+      plan_format: "themes+practice",
+      priorities: ["SQL"],
+      language: "RU",
+    };
 
     const data = await generatePlan({
       resume_text: "python",
       vacancy_text: "sql",
-      brief: { target_role: "Backend", priorities: ["SQL"] },
+      brief,
     });
 
     expect(data.plan_id).toBe(1);
