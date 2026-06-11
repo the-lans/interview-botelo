@@ -77,7 +77,7 @@ async def on_startup():
         try:
             await conn.execute(
                 text(
-                    "ALTER TABLE interview_sessions ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP"
+                    "ALTER TABLE interview_sessions ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ"
                 )
             )
         except Exception:
@@ -110,7 +110,27 @@ async def on_startup():
             await conn.execute(
                 text(
                     "ALTER TABLE users "
-                    "ADD COLUMN IF NOT EXISTS email_verification_expires_at TIMESTAMP"
+                    "ADD COLUMN IF NOT EXISTS email_verification_expires_at TIMESTAMPTZ"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE users "
+                    "ALTER COLUMN email_verification_expires_at TYPE TIMESTAMPTZ "
+                    "USING email_verification_expires_at AT TIME ZONE 'UTC'"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE users "
+                    "ALTER COLUMN created_at TYPE TIMESTAMPTZ "
+                    "USING created_at AT TIME ZONE 'UTC'"
                 )
             )
         except Exception:
@@ -203,7 +223,47 @@ async def on_startup():
             await conn.execute(
                 text(
                     "ALTER TABLE questions "
-                    "ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"
+                    "ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE questions "
+                    "ALTER COLUMN created_at TYPE TIMESTAMPTZ "
+                    "USING created_at AT TIME ZONE 'UTC'"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE resumes "
+                    "ALTER COLUMN created_at TYPE TIMESTAMPTZ "
+                    "USING created_at AT TIME ZONE 'UTC'"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE interview_sessions "
+                    "ALTER COLUMN started_at TYPE TIMESTAMPTZ "
+                    "USING started_at AT TIME ZONE 'UTC'"
+                )
+            )
+        except Exception:
+            pass
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE interview_sessions "
+                    "ALTER COLUMN completed_at TYPE TIMESTAMPTZ "
+                    "USING completed_at AT TIME ZONE 'UTC'"
                 )
             )
         except Exception:

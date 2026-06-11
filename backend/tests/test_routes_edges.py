@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import select
 
+from app.core.time import utc_now
 from app.models.user import User
 from app.services.security import hash_email_token
 
@@ -82,7 +83,7 @@ async def test_verify_invalid_and_expired_token(client):
         res = await session.execute(select(User).where(User.email == "expired@test.com"))
         user = res.scalar_one()
         user.email_verification_token = hash_email_token("expired-token")
-        user.email_verification_expires_at = datetime.utcnow() - timedelta(minutes=1)
+        user.email_verification_expires_at = utc_now() - timedelta(minutes=1)
         await session.commit()
 
     expired = await client.get("/auth/verify", params={"token": "expired-token"})

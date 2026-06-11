@@ -35,6 +35,7 @@ from app.api.schemas import (
     VacancyIngestOut,
 )
 from app.core.config import get_settings
+from app.core.time import utc_now
 from app.db.session import get_db
 from app.models import InterviewAnswer, InterviewSession, Plan, Progress, Question, Resume, User
 from app.services.ai_proxy import chat_completion
@@ -258,7 +259,7 @@ async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email already registered")
 
     token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(hours=settings.EMAIL_VERIFY_TOKEN_TTL_HOURS)
+    expires_at = utc_now() + timedelta(hours=settings.EMAIL_VERIFY_TOKEN_TTL_HOURS)
 
     user = User(
         email=data.email,
@@ -323,7 +324,7 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid token")
     if (
         user.email_verification_expires_at
-        and user.email_verification_expires_at < datetime.utcnow()
+        and _ensure_utc_datetime(user.email_verification_expires_at) < utc_now()
     ):
         raise HTTPException(status_code=400, detail="Token expired")
 
@@ -353,7 +354,7 @@ async def resend_verification(
     settings = get_settings()
     token = secrets.token_urlsafe(32)
     token_hash = hash_email_token(token)
-    expires_at = datetime.utcnow() + timedelta(hours=settings.EMAIL_VERIFY_TOKEN_TTL_HOURS)
+    expires_at = utc_now() + timedelta(hours=settings.EMAIL_VERIFY_TOKEN_TTL_HOURS)
 
     verify_link = f"{settings.FRONTEND_BASE_URL}/auth/verify?token={token}"
     body = (
@@ -580,7 +581,7 @@ async def interview_start(
         user_id=user.id,
         question_id=question.id,
         total_questions=min(MAX_INTERVIEW_QUESTIONS, total_questions_in_db),
-        started_at=datetime.utcnow(),
+        started_at=utc_now(),
     )
     db.add(session)
     await db.commit()
@@ -657,7 +658,7 @@ async def interview_answer(
         scores = [float(score) for score in all_scores_res.scalars().all() if score is not None]
         session_score = round(sum(scores) / len(scores), 2) if scores else round(answer_score, 2)
         session.question_id = None
-        session.completed_at = datetime.utcnow()
+        session.completed_at = utc_now()
         session.score = session_score
         await db.commit()
         return {
@@ -684,7 +685,7 @@ async def interview_answer(
         scores = [float(score) for score in all_scores_res.scalars().all() if score is not None]
         session_score = round(sum(scores) / len(scores), 2) if scores else round(answer_score, 2)
         session.question_id = None
-        session.completed_at = datetime.utcnow()
+        session.completed_at = utc_now()
         session.score = session_score
         await db.commit()
         return {
@@ -749,7 +750,7 @@ async def upsert_progress(
         topic=normalized_topic,
         topic_key=topic_key,
         status=data.status,
-        updated_at=datetime.now(dt_timezone.utc),
+        updated_at=utc_now(),
     )
     db.add(progress_entry)
     await db.flush()

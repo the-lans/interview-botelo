@@ -69,6 +69,7 @@ const statusTypeMap = {
 
 const stepLabels = ["Резюме и вакансия", "Бриф", "Генерация", "Результат и прогресс"];
 const DRAFT_KEY = "dashboardDraftV1";
+const DISPLAY_TIME_ZONE = "UTC";
 
 function formatProgressDate(value) {
   if (!value) {
@@ -83,6 +84,7 @@ function formatProgressDate(value) {
   return new Intl.DateTimeFormat("ru-RU", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(parsed);
 }
 
@@ -620,7 +622,7 @@ export default function DashboardPage() {
             <div className="progress-header">
               <div>
                 <h2>Прогресс</h2>
-                <p className="muted">Отмечайте темы прямо в dashboard. Процент и история синхронизируются с backend.</p>
+                <p className="muted">Отмечайте темы прямо в dashboard. Процент и история синхронизируются с backend. Время показано в UTC.</p>
               </div>
               <div className="progress-ring" aria-label={`Прогресс ${progressData.summary.completion_percent}%`}>
                 <strong>{progressData.summary.completion_percent}%</strong>
