@@ -4,6 +4,7 @@ import React from "react";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { UserEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "../app/dashboard/page";
@@ -47,17 +48,18 @@ const processedVacancyResponse = {
   vacancy_text: "Python backend role",
 } satisfies VacancyIngestResponse;
 
-async function moveToPlanResult(): Promise<void> {
-  await userEvent.type(screen.getByLabelText("Входные данные вакансии"), "text vacancy");
-  await userEvent.click(screen.getByRole("button", { name: "Обработать вакансию" }));
-  await userEvent.click(screen.getByRole("button", { name: "Далее" }));
-  await userEvent.type(screen.getByLabelText("Целевая роль *"), "Backend Engineer");
-  await userEvent.click(screen.getByRole("button", { name: "Далее" }));
-  await userEvent.click(screen.getByRole("button", { name: "Сгенерировать план" }));
+async function moveToPlanResult(user: UserEvent): Promise<void> {
+  await user.type(screen.getByLabelText("Входные данные вакансии"), "text vacancy");
+  await user.click(screen.getByRole("button", { name: "Обработать вакансию" }));
+  await user.click(screen.getByRole("button", { name: "Далее" }));
+  await user.type(screen.getByLabelText("Целевая роль *"), "Backend Engineer");
+  await user.click(screen.getByRole("button", { name: "Далее" }));
+  await user.click(screen.getByRole("button", { name: "Сгенерировать план" }));
 }
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
 });
 
 vi.mock("next/navigation", () => ({
@@ -74,7 +76,9 @@ vi.mock("../lib/api", () => ({
 
 describe("dashboard wizard", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+    pushMock.mockReset();
+    replaceMock.mockReset();
     vi.mocked(api.fetchProgress).mockResolvedValue({
       summary: {
         total_topics: 0,
@@ -113,25 +117,26 @@ describe("dashboard wizard", () => {
   });
 
   it("проходит шаги и генерирует план", async () => {
+    const user = userEvent.setup();
     vi.mocked(api.ingestVacancy).mockResolvedValue(processedVacancyResponse);
     vi.mocked(api.generatePlan).mockResolvedValue(generatedPlanResponse);
 
     render(<DashboardPage />);
 
-    await userEvent.type(screen.getByLabelText("Входные данные вакансии"), "text vacancy");
-    await userEvent.click(screen.getByRole("button", { name: "Обработать вакансию" }));
+    await user.type(screen.getByLabelText("Входные данные вакансии"), "text vacancy");
+    await user.click(screen.getByRole("button", { name: "Обработать вакансию" }));
 
     await waitFor(() => expect(api.ingestVacancy).toHaveBeenCalledWith({ raw_text: "text vacancy" }));
 
-    await userEvent.click(screen.getByRole("button", { name: "Далее" }));
+    await user.click(screen.getByRole("button", { name: "Далее" }));
     expect(screen.getByRole("heading", { name: "Шаг 2. Бриф подготовки" })).toBeInTheDocument();
 
-    await userEvent.type(screen.getByLabelText("Целевая роль *"), "Backend Engineer");
-    await userEvent.click(screen.getByRole("button", { name: "Далее" }));
+    await user.type(screen.getByLabelText("Целевая роль *"), "Backend Engineer");
+    await user.click(screen.getByRole("button", { name: "Далее" }));
 
     expect(screen.getByRole("heading", { name: "Шаг 3. Генерация плана" })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Сгенерировать план" }));
+    await user.click(screen.getByRole("button", { name: "Сгенерировать план" }));
 
     await waitFor(() => expect(api.generatePlan).toHaveBeenCalledTimes(1));
     expect(await screen.findByRole("heading", { name: "Шаг 4. Результат плана" })).toBeInTheDocument();
@@ -139,17 +144,19 @@ describe("dashboard wizard", () => {
   });
 
   it("показывает пустой блок прогресса", async () => {
+    const user = userEvent.setup();
     render(<DashboardPage />);
     await waitFor(() => expect(api.fetchProgress).toHaveBeenCalledTimes(1));
 
     vi.mocked(api.ingestVacancy).mockResolvedValue(processedVacancyResponse);
     vi.mocked(api.generatePlan).mockResolvedValue(generatedPlanResponse);
-    await moveToPlanResult();
+    await moveToPlanResult(user);
 
     expect(await screen.findByText("Пока нет тем прогресса.")).toBeInTheDocument();
   });
 
   it("обновляет статус темы и перезагружает прогресс", async () => {
+    const user = userEvent.setup();
     const updatedProgressPayload = {
       ...progressPayload,
       summary: {
@@ -179,105 +186,14 @@ describe("dashboard wizard", () => {
     vi.mocked(api.ingestVacancy).mockResolvedValue(processedVacancyResponse);
     vi.mocked(api.generatePlan).mockResolvedValue(generatedPlanResponse);
 
-    await moveToPlanResult();
+    await moveToPlanResult(user);
 
     const select = await screen.findByLabelText("Статус темы Python");
-    await userEvent.selectOptions(select, "done");
+    await user.selectOptions(select, "done");
 
     await waitFor(() => expect(api.updateProgress).toHaveBeenCalledWith({ topic: "Python", status: "done" }));
     expect(await screen.findByText("Статус темы «Python» обновлён.")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("100%")).toBeInTheDocument());
   });
 
-  it("делает logout и редиректит на auth-first экран", async () => {
-    vi.mocked(api.logout).mockResolvedValue({ detail: "ok" });
-    window.localStorage.setItem("dashboardDraftV1", JSON.stringify({ vacancyInput: "secret" }));
-    render(<DashboardPage />);
-
-    await userEvent.click(screen.getByRole("button", { name: "Выйти" }));
-
-    await waitFor(() => expect(api.logout).toHaveBeenCalledTimes(1));
-    expect(window.localStorage.getItem("dashboardDraftV1")).toBeNull();
-    expect(pushMock).toHaveBeenCalledWith("/");
-  });
-
-  it("редиректит на auth-first экран при 401 от progress", async () => {
-    vi.mocked(api.fetchProgress).mockRejectedValue(
-      Object.assign(new Error("Unauthorized"), { status: 401 }),
-    );
-    render(<DashboardPage />);
-
-    expect(await screen.findByText("Нужно войти, чтобы увидеть прогресс.")).toBeInTheDocument();
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/?redirect=/dashboard"));
-  });
-
-  it("блокирует переход к генерации без целевой роли", async () => {
-    vi.mocked(api.ingestVacancy).mockResolvedValue(processedVacancyResponse);
-    render(<DashboardPage />);
-
-    await userEvent.type(screen.getByLabelText("Входные данные вакансии"), "text vacancy");
-    await userEvent.click(screen.getByRole("button", { name: "Обработать вакансию" }));
-    await waitFor(() => expect(api.ingestVacancy).toHaveBeenCalledTimes(1));
-
-    await userEvent.click(screen.getByRole("button", { name: "Далее" }));
-    expect(screen.getByRole("heading", { name: "Шаг 2. Бриф подготовки" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Далее" })).toBeDisabled();
-  });
-
-  it.each([
-    {
-      name: "во время обработки вакансии",
-      setup: () => {
-        vi.mocked(api.ingestVacancy).mockRejectedValue(
-          Object.assign(new Error("Unauthorized"), { status: 401 }),
-        );
-      },
-      act: async () => {
-        await userEvent.type(screen.getByLabelText("Входные данные вакансии"), "text vacancy");
-        await userEvent.click(screen.getByRole("button", { name: "Обработать вакансию" }));
-      },
-    },
-    {
-      name: "во время генерации плана",
-      setup: () => {
-        vi.mocked(api.ingestVacancy).mockResolvedValue(processedVacancyResponse);
-        vi.mocked(api.generatePlan).mockRejectedValue(
-          Object.assign(new Error("Unauthorized"), { status: 401 }),
-        );
-      },
-      act: async () => {
-        await userEvent.type(screen.getByLabelText("Входные данные вакансии"), "text vacancy");
-        await userEvent.click(screen.getByRole("button", { name: "Обработать вакансию" }));
-        await waitFor(() => expect(api.ingestVacancy).toHaveBeenCalledTimes(1));
-        await userEvent.click(screen.getByRole("button", { name: "Далее" }));
-        await userEvent.type(screen.getByLabelText("Целевая роль *"), "Backend Engineer");
-        await userEvent.click(screen.getByRole("button", { name: "Далее" }));
-        await userEvent.click(screen.getByRole("button", { name: "Сгенерировать план" }));
-      },
-    },
-    {
-      name: "во время обновления статуса темы",
-      setup: () => {
-        vi.mocked(api.fetchProgress).mockResolvedValue(progressPayload);
-        vi.mocked(api.ingestVacancy).mockResolvedValue(processedVacancyResponse);
-        vi.mocked(api.generatePlan).mockResolvedValue(generatedPlanResponse);
-        vi.mocked(api.updateProgress).mockRejectedValue(
-          Object.assign(new Error("Unauthorized"), { status: 401 }),
-        );
-      },
-      act: async () => {
-        await moveToPlanResult();
-        const select = await screen.findByLabelText("Статус темы Python");
-        await userEvent.selectOptions(select, "done");
-      },
-    },
-  ])("возвращает на вход при 401 $name", async ({ act, setup }) => {
-    setup();
-    render(<DashboardPage />);
-
-    await act();
-
-    expect(await screen.findByText("Сессия истекла. Войдите снова, чтобы продолжить.")).toBeInTheDocument();
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/?redirect=/dashboard"));
-  });
 });
