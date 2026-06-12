@@ -267,7 +267,7 @@ async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError as error:
         await db.rollback()
         raise HTTPException(status_code=400, detail="Email already registered") from error
@@ -281,7 +281,10 @@ async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
     try:
         send_email(data.email, "Подтверждение регистрации", body)
     except EmailDeliveryError as error:
+        await db.rollback()
         raise HTTPException(status_code=503, detail="Verification email is unavailable") from error
+
+    await db.commit()
 
     return {"detail": "verification_sent"}
 
