@@ -53,6 +53,11 @@ async def test_email_delivery_returns_503(client, monkeypatch, endpoint, payload
     resp = await client.post(endpoint, json=payload)
     assert resp.status_code == 503
 
+    if endpoint == "/auth/signup":
+        async with SessionLocal() as session:
+            res = await session.execute(select(User).where(User.email == payload["email"]))
+            assert res.scalar_one_or_none() is None
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
