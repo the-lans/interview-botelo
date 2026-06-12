@@ -11,8 +11,7 @@ SEED_QUESTIONS = [
         "difficulty": "middle",
         "tags": "python,concurrency,threads",
         "sample_answer": (
-            "GIL ограничивает одновременное выполнение Python-байткода "
-            "в одном процессе."
+            "GIL ограничивает одновременное выполнение Python-байткода в одном процессе."
         ),
     },
     {

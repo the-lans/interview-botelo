@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 from jose import JWTError
+from sqlalchemy.exc import SQLAlchemyError
 
 
 @pytest.mark.asyncio
@@ -31,7 +32,11 @@ async def test_chat_completion_sends_auth_header(monkeypatch):
             captured["headers"] = headers
             return Resp()
 
-    monkeypatch.setattr(ai_proxy, "get_settings", lambda: SimpleNamespace(OPENCLAW_API_BASE="http://api", OPENCLAW_API_TOKEN="tkn"))
+    monkeypatch.setattr(
+        ai_proxy,
+        "get_settings",
+        lambda: SimpleNamespace(OPENCLAW_API_BASE="http://api", OPENCLAW_API_TOKEN="tkn"),
+    )
     monkeypatch.setattr(ai_proxy.httpx, "AsyncClient", lambda timeout: Client())
 
     result = await ai_proxy.chat_completion([{"role": "user", "content": "hi"}])
@@ -47,7 +52,9 @@ async def test_get_current_user_invalid_token(monkeypatch):
     class FakeRequest:
         cookies = {"session": "bad"}
 
-    monkeypatch.setattr(auth, "decode_access_token", lambda token: (_ for _ in ()).throw(JWTError("bad")))
+    monkeypatch.setattr(
+        auth, "decode_access_token", lambda token: (_ for _ in ()).throw(JWTError("bad"))
+    )
 
     with pytest.raises(HTTPException) as error:
         await auth.get_current_user(FakeRequest(), db=SimpleNamespace())
@@ -58,14 +65,36 @@ async def test_get_current_user_invalid_token(monkeypatch):
 def test_send_email_skips_in_test_env(monkeypatch):
     from app.services import emailer
 
-    monkeypatch.setattr(emailer, "get_settings", lambda: SimpleNamespace(APP_ENV="test", SMTP_HOST="", SMTP_USER="", SMTP_PASSWORD="", SMTP_FROM="", SMTP_PORT=465))
+    monkeypatch.setattr(
+        emailer,
+        "get_settings",
+        lambda: SimpleNamespace(
+            APP_ENV="test",
+            SMTP_HOST="",
+            SMTP_USER="",
+            SMTP_PASSWORD="",
+            SMTP_FROM="",
+            SMTP_PORT=465,
+        ),
+    )
     emailer.send_email("a@b.com", "Subj", "Body")
 
 
 def test_send_email_raises_in_prod_without_smtp(monkeypatch):
     from app.services import emailer
 
-    monkeypatch.setattr(emailer, "get_settings", lambda: SimpleNamespace(APP_ENV="prod", SMTP_HOST="", SMTP_USER="", SMTP_PASSWORD="", SMTP_FROM="", SMTP_PORT=465))
+    monkeypatch.setattr(
+        emailer,
+        "get_settings",
+        lambda: SimpleNamespace(
+            APP_ENV="prod",
+            SMTP_HOST="",
+            SMTP_USER="",
+            SMTP_PASSWORD="",
+            SMTP_FROM="",
+            SMTP_PORT=465,
+        ),
+    )
     with pytest.raises(emailer.EmailDeliveryError):
         emailer.send_email("a@b.com", "Subj", "Body")
 
@@ -91,7 +120,18 @@ def test_send_email_success(monkeypatch):
             self.closed = True
 
     smtp = SMTP("h", 1)
-    monkeypatch.setattr(emailer, "get_settings", lambda: SimpleNamespace(APP_ENV="prod", SMTP_HOST="host", SMTP_USER="user", SMTP_PASSWORD="pass", SMTP_FROM="from@test.com", SMTP_PORT=465))
+    monkeypatch.setattr(
+        emailer,
+        "get_settings",
+        lambda: SimpleNamespace(
+            APP_ENV="prod",
+            SMTP_HOST="host",
+            SMTP_USER="user",
+            SMTP_PASSWORD="pass",
+            SMTP_FROM="from@test.com",
+            SMTP_PORT=465,
+        ),
+    )
     monkeypatch.setattr(emailer.smtplib, "SMTP_SSL", lambda host, port: smtp)
 
     emailer.send_email("to@test.com", "Subj", "Body")
@@ -154,3 +194,17 @@ async def test_on_startup_runs_migrations_and_seed(monkeypatch):
 
     assert seeded["called"] is True
     assert len(executed) >= 10
+
+
+@pytest.mark.asyncio
+async def test_apply_startup_migrations_raises_on_postgres_error():
+    from app.db.startup import apply_startup_migrations
+
+    class FakeConn:
+        dialect = SimpleNamespace(name="postgresql")
+
+        async def execute(self, query):
+            raise SQLAlchemyError("boom")
+
+    with pytest.raises(RuntimeError):
+        await apply_startup_migrations(FakeConn(), statements=("SELECT broken",))

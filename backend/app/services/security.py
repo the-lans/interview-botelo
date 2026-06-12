@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 from datetime import timedelta
 from typing import Any
 
@@ -33,6 +34,19 @@ def create_access_token(subject: str, expires_minutes: int = 60 * 24 * 7) -> str
 
 def hash_email_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def create_csrf_token(session_token: str) -> str:
+    return hmac.new(
+        settings.SESSION_SECRET.encode("utf-8"),
+        session_token.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def verify_csrf_token(session_token: str, csrf_token: str) -> bool:
+    expected_token = create_csrf_token(session_token)
+    return hmac.compare_digest(expected_token, csrf_token)
 
 
 def decode_access_token(token: str) -> dict[str, Any]:

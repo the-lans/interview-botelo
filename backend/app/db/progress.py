@@ -142,9 +142,6 @@ async def get_latest_plan(
     user_id: int,
 ) -> Plan | None:
     result = await db.execute(
-        select(Plan)
-        .where(Plan.user_id == user_id)
-        .order_by(Plan.created_at.desc())
-        .limit(1)
+        select(Plan).where(Plan.user_id == user_id).order_by(Plan.created_at.desc()).limit(1)
     )
     return result.scalar_one_or_none()

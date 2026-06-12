@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncConnection
+
+logger = logging.getLogger(__name__)
 
 STARTUP_MIGRATIONS: tuple[str, ...] = (
     "ALTER TABLE interview_sessions ADD COLUMN IF NOT EXISTS question_id INTEGER",
@@ -79,9 +82,14 @@ async def apply_startup_migrations(
     *,
     statements: Sequence[str] = STARTUP_MIGRATIONS,
 ) -> None:
+    dialect_name = getattr(getattr(conn, "dialect", None), "name", None)
+    allow_best_effort = dialect_name == "sqlite"
     for statement in statements:
         try:
             await conn.execute(text(statement))
-        except SQLAlchemyError:
-            # Миграции best-effort для существующих БД: на старых/SQLite часть ALTER недоступна.
-            continue
+        except SQLAlchemyError as error:
+            logger.exception("Не удалось выполнить startup migration: %s", statement)
+            if allow_best_effort:
+                # Для SQLite часть ALTER недоступна, поэтому в тестовой/локальной БД пропускаем их.
+                continue
+            raise RuntimeError(f"Startup migration failed: {statement}") from error
