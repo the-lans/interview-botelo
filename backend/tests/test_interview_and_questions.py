@@ -361,12 +361,16 @@ async def test_interview_uses_average_score_when_question_pool_shrinks(client, m
 
     async with SessionLocal() as session:
         answer_scores = (
-            await session.execute(
-                select(InterviewAnswer.score).where(
-                    InterviewAnswer.session_id == start_payload["session_id"]
+            (
+                await session.execute(
+                    select(InterviewAnswer.score).where(
+                        InterviewAnswer.session_id == start_payload["session_id"]
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     expected_session_score = round(
         sum(float(score) for score in answer_scores if score is not None) / len(answer_scores), 2
     )

@@ -13,6 +13,7 @@ from docx.opc.exceptions import PackageNotFoundError
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse
 from sqlalchemy import String, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from striprtf.striprtf import rtf_to_text
 
@@ -49,6 +50,7 @@ from app.services.emailer import EmailDeliveryError, send_email
 from app.services.rate_limit import check_rate_limit
 from app.services.security import (
     create_access_token,
+    create_csrf_token,
     hash_email_token,
     hash_password,
     verify_password,
@@ -173,6 +175,13 @@ def _extract_topics_from_plan(plan: Plan | None) -> list[str]:
     return topics
 
 
+def _use_secure_cookies() -> bool:
+    settings = get_settings()
+    if settings.SESSION_COOKIE_SECURE is not None:
+        return settings.SESSION_COOKIE_SECURE
+    return settings.APP_ENV not in {"dev", "test"}
+
+
 def _serialize_progress(
     latest_entries: list[Progress],
     plan_topics: list[str],
@@ -246,10 +255,6 @@ def _serialize_progress(
 @router.post("/auth/signup", response_model=MessageOut)
 async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
     settings = get_settings()
-    res = await db.execute(select(User).where(User.email == data.email))
-    if res.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Email already registered")
-
     token = secrets.token_urlsafe(32)
     expires_at = utc_now() + timedelta(hours=settings.EMAIL_VERIFY_TOKEN_TTL_HOURS)
 
@@ -260,6 +265,13 @@ async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
         email_verification_token=hash_email_token(token),
         email_verification_expires_at=expires_at,
     )
+    db.add(user)
+    try:
+        await db.commit()
+    except IntegrityError as error:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Email already registered") from error
+
     verify_link = f"{settings.FRONTEND_BASE_URL}/auth/verify?token={token}"
     body = (
         "Подтверждение регистрации.\n\n"
@@ -270,9 +282,6 @@ async def signup(data: SignupIn, db: AsyncSession = Depends(get_db)):
         send_email(data.email, "Подтверждение регистрации", body)
     except EmailDeliveryError as error:
         raise HTTPException(status_code=503, detail="Verification email is unavailable") from error
-
-    db.add(user)
-    await db.commit()
 
     return {"detail": "verification_sent"}
 
@@ -294,15 +303,24 @@ async def login(
         raise HTTPException(status_code=403, detail="Email not verified")
 
     token = create_access_token(str(user.id))
-    response.set_cookie("session", token, httponly=True, samesite="lax")
-    response.set_cookie("csrf_token", token[-24:], httponly=False, samesite="lax")
+    csrf_token = create_csrf_token(token)
+    secure_cookies = _use_secure_cookies()
+    response.set_cookie("session", token, httponly=True, samesite="lax", secure=secure_cookies)
+    response.set_cookie(
+        "csrf_token",
+        csrf_token,
+        httponly=False,
+        samesite="lax",
+        secure=secure_cookies,
+    )
     return {"detail": "ok"}
 
 
 @router.post("/auth/logout", response_model=MessageOut)
 async def logout(response: Response):
-    response.delete_cookie("session")
-    response.delete_cookie("csrf_token")
+    secure_cookies = _use_secure_cookies()
+    response.delete_cookie("session", samesite="lax", secure=secure_cookies)
+    response.delete_cookie("csrf_token", samesite="lax", secure=secure_cookies)
     return {"detail": "ok"}
 
 
@@ -592,13 +610,13 @@ async def interview_answer(
     if not normalized_answer:
         raise HTTPException(status_code=422, detail="Answer must not be empty")
 
-    res = await db.execute(
+    session_res = await db.execute(
         select(InterviewSession).where(
             InterviewSession.id == data.session_id,
             InterviewSession.user_id == user.id,
         )
     )
-    session = res.scalar_one_or_none()
+    session = session_res.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -624,8 +642,24 @@ async def interview_answer(
         raise HTTPException(status_code=502, detail="Feedback unavailable") from exc
 
     answer_score = _score_interview_answer(question, normalized_answer)
+    locked_session_res = await db.execute(
+        select(InterviewSession)
+        .where(
+            InterviewSession.id == data.session_id,
+            InterviewSession.user_id == user.id,
+        )
+        .with_for_update()
+    )
+    locked_session = locked_session_res.scalar_one_or_none()
+    if not locked_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if locked_session.completed_at is not None:
+        raise HTTPException(status_code=400, detail="Session already completed")
+    if not locked_session.question_id or locked_session.question_id != data.question_id:
+        raise HTTPException(status_code=400, detail="Question mismatch")
+
     answer = InterviewAnswer(
-        session_id=session.id,
+        session_id=locked_session.id,
         question_id=question.id,
         question=question.text,
         answer=normalized_answer,
@@ -636,22 +670,22 @@ async def interview_answer(
     await db.flush()
 
     answered_question_ids_res = await db.execute(
-        select(InterviewAnswer.question_id).where(InterviewAnswer.session_id == session.id)
+        select(InterviewAnswer.question_id).where(InterviewAnswer.session_id == locked_session.id)
     )
     answered_question_ids = [
         question_id for question_id in answered_question_ids_res.scalars().all()
     ]
     answered_count = len(answered_question_ids)
 
-    if answered_count >= session.total_questions:
+    if answered_count >= locked_session.total_questions:
         all_scores_res = await db.execute(
-            select(InterviewAnswer.score).where(InterviewAnswer.session_id == session.id)
+            select(InterviewAnswer.score).where(InterviewAnswer.session_id == locked_session.id)
         )
         scores = [float(score) for score in all_scores_res.scalars().all() if score is not None]
         session_score = round(sum(scores) / len(scores), 2) if scores else round(answer_score, 2)
-        session.question_id = None
-        session.completed_at = utc_now()
-        session.score = session_score
+        locked_session.question_id = None
+        locked_session.completed_at = utc_now()
+        locked_session.score = session_score
         await db.commit()
         return {
             "feedback": feedback,
@@ -672,13 +706,13 @@ async def interview_answer(
     next_q = next_q_res.scalar_one_or_none()
     if not next_q:
         all_scores_res = await db.execute(
-            select(InterviewAnswer.score).where(InterviewAnswer.session_id == session.id)
+            select(InterviewAnswer.score).where(InterviewAnswer.session_id == locked_session.id)
         )
         scores = [float(score) for score in all_scores_res.scalars().all() if score is not None]
         session_score = round(sum(scores) / len(scores), 2) if scores else round(answer_score, 2)
-        session.question_id = None
-        session.completed_at = utc_now()
-        session.score = session_score
+        locked_session.question_id = None
+        locked_session.completed_at = utc_now()
+        locked_session.score = session_score
         await db.commit()
         return {
             "feedback": feedback,
@@ -690,7 +724,7 @@ async def interview_answer(
             "next_question": None,
         }
 
-    session.question_id = next_q.id
+    locked_session.question_id = next_q.id
     await db.commit()
 
     return {

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     JWT_SECRET: str
     SESSION_SECRET: str
+    SESSION_COOKIE_SECURE: bool | None = None
 
     OPENCLAW_API_BASE: str = "http://127.0.0.1:18789/v1"
     OPENCLAW_API_TOKEN: str | None = None

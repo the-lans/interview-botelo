@@ -3,7 +3,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import socket
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 from fastapi import HTTPException
@@ -16,6 +16,7 @@ except Exception:  # pragma: no cover
 MAX_VACANCY_TEXT_LENGTH = 20_000
 HTTP_TIMEOUT_SECONDS = 10.0
 REQUEST_USER_AGENT = "InterviewBotelo/1.0 (+https://interview.botelo.ru)"
+MAX_REDIRECTS = 5
 DENYLIST_HOSTS = {
     "localhost",
     "metadata.google.internal",
@@ -98,15 +99,30 @@ async def ingest_vacancy(url: str | None, raw_text: str | None) -> str:
         return normalize_text(raw_text)
 
     assert url is not None
-    _validate_url_is_safe(url)
 
     try:
         async with httpx.AsyncClient(
             timeout=HTTP_TIMEOUT_SECONDS,
             headers={"User-Agent": REQUEST_USER_AGENT},
-            follow_redirects=True,
+            follow_redirects=False,
         ) as client:
-            response = await client.get(url)
+            current_url = url
+            for _ in range(MAX_REDIRECTS + 1):
+                _validate_url_is_safe(current_url)
+                response = await client.get(current_url)
+
+                if not getattr(response, "is_redirect", False):
+                    break
+
+                location = response.headers.get("location")
+                if not location:
+                    raise HTTPException(
+                        status_code=502, detail="Vacancy URL returned invalid redirect"
+                    )
+
+                current_url = urljoin(current_url, location)
+            else:
+                raise HTTPException(status_code=502, detail="Vacancy URL exceeded redirect limit")
     except httpx.TimeoutException as error:
         raise HTTPException(status_code=504, detail="Vacancy URL request timeout") from error
     except httpx.HTTPError as error:

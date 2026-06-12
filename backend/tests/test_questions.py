@@ -28,8 +28,18 @@ async def _seed_questions(items):
 async def test_get_questions_without_filters_returns_all(client):
     await _seed_questions(
         [
-            {"text": "Explain Python GIL", "topic": "python", "difficulty": "middle", "tags": "python,concurrency"},
-            {"text": "What is index in PostgreSQL?", "topic": "database", "difficulty": "junior", "tags": "postgres,index"},
+            {
+                "text": "Explain Python GIL",
+                "topic": "python",
+                "difficulty": "middle",
+                "tags": "python,concurrency",
+            },
+            {
+                "text": "What is index in PostgreSQL?",
+                "topic": "database",
+                "difficulty": "junior",
+                "tags": "postgres,index",
+            },
         ]
     )
 
@@ -49,7 +59,12 @@ async def test_get_questions_without_filters_returns_all(client):
             {"topic": "python"},
             [
                 {"text": "Q1", "topic": "python", "difficulty": "middle", "tags": "python"},
-                {"text": "Q2", "topic": "system-design", "difficulty": "senior", "tags": "architecture"},
+                {
+                    "text": "Q2",
+                    "topic": "system-design",
+                    "difficulty": "senior",
+                    "tags": "architecture",
+                },
             ],
             1,
             "topic",
