@@ -19,4 +19,14 @@ export NEXT_PUBLIC_API_BASE=http://localhost:8000
 
 ```bash
 npm test
+npm run typecheck
+```
+
+## CI-проверка
+
+Для pull request ожидается тот же минимальный набор:
+
+```bash
+npm test -- --run
+npm run typecheck
 ```

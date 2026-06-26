@@ -172,3 +172,36 @@ async def test_logout_rejects_csrf_token_not_bound_to_session(client):
     logout = await client.post("/auth/logout")
     assert logout.status_code == 403
     assert logout.json()["detail"] == "CSRF token missing/invalid"
+
+
+@pytest.mark.asyncio
+async def test_logout_clears_session_and_csrf_cookies(client):
+    from app.db.session import SessionLocal
+
+    await client.post(
+        "/auth/signup", json={"email": "logout-ok@test.com", "password": "pass1234"}
+    )
+
+    plain_token = "logout-ok-token"
+    async with SessionLocal() as session:
+        res = await session.execute(select(User).where(User.email == "logout-ok@test.com"))
+        user = res.scalar_one()
+        user.email_verification_token = hash_email_token(plain_token)
+        await session.commit()
+
+    await client.get(f"/auth/verify?token={plain_token}")
+    login = await client.post(
+        "/auth/login", json={"email": "logout-ok@test.com", "password": "pass1234"}
+    )
+    assert login.status_code == 200
+
+    csrf_token = login.cookies.get("csrf_token")
+    assert csrf_token
+    client.headers["x-csrf-token"] = csrf_token
+
+    logout = await client.post("/auth/logout")
+    assert logout.status_code == 200
+
+    set_cookie_headers = logout.headers.get_list("set-cookie")
+    assert any("session=" in header and "Max-Age=0" in header for header in set_cookie_headers)
+    assert any("csrf_token=" in header and "Max-Age=0" in header for header in set_cookie_headers)

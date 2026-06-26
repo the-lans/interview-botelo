@@ -6,7 +6,9 @@ Interview simulator platform for Botelo.
 - `backend/` — FastAPI backend (auth, resume upload, plan generation, interview simulation)
 - `docs/TZ.md` — актуальное ТЗ
 
-## Quick start (backend)
+## Quick start
+
+### Backend
 ```bash
 cd backend
 cp ../.env.example .env
@@ -19,12 +21,32 @@ python -m pip install -e .
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## Tests
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## Checks
+
+### Backend
 ```bash
 cd backend
 python -m pip install -e .[dev]
 pytest -q
 ```
 
-## Status
-Backend scaffolded, tests included. Frontend to be added.
+### Frontend
+
+```bash
+cd frontend
+npm test -- --run
+npm run typecheck
+```
+
+## CI / Deploy
+
+- GitHub Actions запускает backend `pytest`, frontend `vitest` и frontend `typecheck`.
+- Деплой выполняется через `deploy/deploy.sh` и падает, если `http://127.0.0.1:8000/health` или `http://127.0.0.1:3000` не поднимаются вовремя.
