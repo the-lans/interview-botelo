@@ -109,6 +109,21 @@ describe("dashboard wizard", () => {
     await waitFor(() => expect(api.fetchProgress).toHaveBeenCalledTimes(1));
   });
 
+  it("редиректит на вход при 401 во время начальной загрузки прогресса", async () => {
+    vi.mocked(api.fetchProgress).mockRejectedValue({
+      status: 401,
+      message: "Unauthorized",
+    });
+
+    render(<DashboardPage />);
+
+    expect(
+      await screen.findByText("Нужно войти, чтобы увидеть прогресс."),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Перейти к входу")).toBeInTheDocument();
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/?redirect=/dashboard"));
+  });
+
   it("не пускает дальше без обработки вакансии", async () => {
     render(<DashboardPage />);
 
@@ -155,6 +170,36 @@ describe("dashboard wizard", () => {
     expect(await screen.findByText("Пока нет тем прогресса.")).toBeInTheDocument();
   });
 
+  it("после генерации плана молча перезагружает прогресс", async () => {
+    const user = userEvent.setup();
+    let fetchProgressCalls = 0;
+    vi.mocked(api.fetchProgress).mockImplementation(async () => {
+      fetchProgressCalls += 1;
+      return fetchProgressCalls >= 2
+        ? progressPayload
+        : {
+            summary: {
+              total_topics: 0,
+              completed_topics: 0,
+              completion_percent: 0,
+              status_counts: { todo: 0, in_progress: 0, done: 0 },
+            },
+            topics: [],
+            history: [],
+          };
+    });
+    vi.mocked(api.ingestVacancy).mockResolvedValue(processedVacancyResponse);
+    vi.mocked(api.generatePlan).mockResolvedValue(generatedPlanResponse);
+
+    render(<DashboardPage />);
+    await waitFor(() => expect(api.fetchProgress).toHaveBeenCalledTimes(1));
+
+    await moveToPlanResult(user);
+
+    expect(await screen.findByRole("heading", { name: "Python" })).toBeInTheDocument();
+    await waitFor(() => expect(fetchProgressCalls).toBeGreaterThan(1));
+  });
+
   it("обновляет статус темы и перезагружает прогресс", async () => {
     const user = userEvent.setup();
     const updatedProgressPayload = {
@@ -194,6 +239,28 @@ describe("dashboard wizard", () => {
     await waitFor(() => expect(api.updateProgress).toHaveBeenCalledWith({ topic: "Python", status: "done" }));
     expect(await screen.findByText("Статус темы «Python» обновлён.")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("100%")).toBeInTheDocument());
+  });
+
+  it("редиректит на вход, если обновление прогресса вернуло 401", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.fetchProgress).mockResolvedValue(progressPayload);
+    vi.mocked(api.ingestVacancy).mockResolvedValue(processedVacancyResponse);
+    vi.mocked(api.generatePlan).mockResolvedValue(generatedPlanResponse);
+    vi.mocked(api.updateProgress).mockRejectedValue({
+      status: 401,
+      message: "Unauthorized",
+    });
+
+    render(<DashboardPage />);
+    await waitFor(() => expect(api.fetchProgress).toHaveBeenCalledTimes(1));
+
+    await moveToPlanResult(user);
+    await user.selectOptions(await screen.findByLabelText("Статус темы Python"), "done");
+
+    expect(
+      await screen.findByText("Сессия истекла. Войдите снова, чтобы продолжить."),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/?redirect=/dashboard"));
   });
 
 });

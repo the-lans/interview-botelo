@@ -49,6 +49,10 @@ jobs:
         run: |
           cd frontend
           npm test -- --run
+      - name: Run frontend typecheck
+        run: |
+          cd frontend
+          npm run typecheck
 
   deploy:
     needs: [backend-tests, frontend-tests]
