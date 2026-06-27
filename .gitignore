@@ -25,6 +25,7 @@ htmlcov/
 
 # Node
 node_modules/
+*.tsbuildinfo
 
 # IDE/OS
 .DS_Store
